@@ -19,7 +19,7 @@ import {
   Sparkles,
   Loader2,
   Film,
-  Presentation,
+ Maximize,
   Undo2,
   Redo2,
 } from 'lucide-react';
@@ -320,14 +320,25 @@ export function Sidebar() {
               onClick={handleNew}
               variant="outline"
               size="sm"
-              className="bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] hover:bg-[#252530] hover:border-[#E8C547] h-9"
+              className="flex-1 bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] hover:bg-[#252530] hover:border-[#E8C547] h-9"
             >
               <Film className="w-3.5 h-3.5 mr-1.5" />
               New
             </Button>
+            <Button
+              onClick={() => setPresentationMode(true)}
+              disabled={shots.length === 0}
+              variant="outline"
+              size="sm"
+              className="flex-1 bg-[#E8C547]/10 border-[#E8C547]/30 text-[#E8C547] hover:bg-[#E8C547]/20 hover:border-[#E8C547] h-9 disabled:opacity-30"
+              title="Present (Ctrl+P)"
+            >
+              <Maximize className="w-3.5 h-3.5 mr-1.5" />
+              Present
+            </Button>
           </div>
 
-          {/* Undo/Redo + Present */}
+          {/* Undo/Redo */}
           <div className="flex gap-2">
             <Button
               onClick={undo}
@@ -350,17 +361,6 @@ export function Sidebar() {
             >
               <Redo2 className="w-3.5 h-3.5 mr-1.5" />
               Redo
-            </Button>
-            <Button
-              onClick={() => setPresentationMode(true)}
-              disabled={shots.length === 0}
-              variant="outline"
-              size="sm"
-              className="flex-1 bg-[#E8C547]/10 border-[#E8C547]/30 text-[#E8C547] hover:bg-[#E8C547]/20 hover:border-[#E8C547] h-9 disabled:opacity-30"
-              title="Present (Ctrl+P)"
-            >
-              <Presentation className="w-3.5 h-3.5 mr-1.5" />
-              Present
             </Button>
           </div>
 

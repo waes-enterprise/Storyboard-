@@ -93,7 +93,7 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
 
         {/* Hidden file input for upload */}
         <input
-          ref={fileRef}
+          ref={fileInputRef}
           type="file"
           accept="image/*"
           onChange={handleFileChange}

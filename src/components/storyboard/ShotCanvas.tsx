@@ -19,6 +19,7 @@ import {
 import { useStoryboardStore } from '@/stores/storyboard';
 import { ShotCard } from './ShotCard';
 import { EditModal } from './EditModal';
+import { PresentationMode } from './PresentationMode';
 import type { Shot } from '@/types/storyboard';
 import { Clapperboard, Loader2, ImageIcon, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,12 +38,13 @@ export function ShotCanvas() {
     isEditModalOpen,
     setEditingShot,
     setIsEditModalOpen,
+    isPresentationMode,
   } = useStoryboardStore();
 
   const isImageLoadingRef = useRef(false);
 
-  // Sequential image loading
-  const loadImagesSequentially = useCallback(async () => {
+  // Parallel image loading with semaphore (max 3 concurrent)
+  const loadImagesInParallel = useCallback(async () => {
     if (isImageLoadingRef.current) return;
     const shotsToLoad = shots.filter((s) => !s.imageUrl && s.frameDescription);
     if (shotsToLoad.length === 0) return;
@@ -51,40 +53,49 @@ export function ShotCanvas() {
     setIsLoadingImages(true);
     setImageLoadingProgress(0);
 
-    for (let i = 0; i < shotsToLoad.length; i++) {
-      const shot = shotsToLoad[i];
-      const seed = Date.now() + i * 1000 + Math.floor(Math.random() * 1000);
-      const prompt = shot.frameDescription || shot.actionDescription;
-      const encodedPrompt = encodeURIComponent(
-        `${prompt}, cinematic storyboard pencil sketch black and white film grain`
-      );
-      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=640&height=360&nologo=true&seed=${seed}`;
+    const CONCURRENCY = 3;
+    const TIMEOUT_MS = 20000;
+    let completed = 0;
 
-      // Pre-load image
-      try {
-        await new Promise<void>((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            updateShotImageUrl(shot.id, url);
-            resolve();
-          };
-          img.onerror = () => {
-            // Still set the URL even if pre-load fails - the img tag will handle it
-            updateShotImageUrl(shot.id, url);
-            resolve();
-          };
-          img.src = url;
-          // Timeout after 30s
-          setTimeout(() => {
-            updateShotImageUrl(shot.id, url);
-            resolve();
-          }, 30000);
-        });
-      } catch {
-        updateShotImageUrl(shot.id, url);
-      }
+    const loadImage = (shot: Shot, index: number): Promise<void> => {
+      return new Promise<void>((resolve) => {
+        const seed = Date.now() + index * 1000 + Math.floor(Math.random() * 1000);
+        const prompt = shot.frameDescription || shot.actionDescription;
+        const encodedPrompt = encodeURIComponent(
+          `${prompt}, cinematic storyboard pencil sketch black and white film grain`
+        );
+        const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=640&height=360&nologo=true&seed=${seed}`;
 
-      setImageLoadingProgress(((i + 1) / shotsToLoad.length) * 100);
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          completed++;
+          setImageLoadingProgress((completed / shotsToLoad.length) * 100);
+          resolve();
+        };
+
+        const img = new Image();
+        img.onload = () => {
+          updateShotImageUrl(shot.id, url);
+          done();
+        };
+        img.onerror = () => {
+          updateShotImageUrl(shot.id, url);
+          done();
+        };
+        img.src = url;
+        setTimeout(() => {
+          updateShotImageUrl(shot.id, url);
+          done();
+        }, TIMEOUT_MS);
+      });
+    };
+
+    // Process in batches of CONCURRENCY using Promise.allSettled
+    for (let i = 0; i < shotsToLoad.length; i += CONCURRENCY) {
+      const batch = shotsToLoad.slice(i, i + CONCURRENCY);
+      await Promise.allSettled(batch.map((shot, batchIdx) => loadImage(shot, i + batchIdx)));
     }
 
     setIsLoadingImages(false);
@@ -97,11 +108,11 @@ export function ShotCanvas() {
       const shotsNeedingImages = shots.filter((s) => !s.imageUrl && s.frameDescription);
       if (shotsNeedingImages.length > 0) {
         // Small delay to let cards render first
-        const timer = setTimeout(loadImagesSequentially, 500);
+        const timer = setTimeout(loadImagesInParallel, 500);
         return () => clearTimeout(timer);
       }
     }
-  }, [shots.length, loadImagesSequentially, shots]);
+  }, [shots.length, loadImagesInParallel, shots]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -171,7 +182,8 @@ export function ShotCanvas() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <>
+      <div className="flex-1 overflow-y-auto p-6">
       {/* Status bar */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -252,5 +264,9 @@ export function ShotCanvas() {
         onOpenChange={setIsEditModalOpen}
       />
     </div>
+
+      {/* Fullscreen Presentation Mode */}
+      {isPresentationMode && <PresentationMode />}
+    </>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { SHOT_TYPES, type Shot } from '@/types/storyboard';
 import {
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Save, X, RefreshCw } from 'lucide-react';
+import { Save, X, RefreshCw, Upload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface EditModalProps {
@@ -35,9 +35,13 @@ export function EditModal({ shot, open, onOpenChange }: EditModalProps) {
     actionDescription: '',
     cameraNote: '',
     frameDescription: '',
+    imageUrl: '',
   });
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const { updateShot, regenerateImageForShot } = useStoryboardStore();
+  const { updateShot, regenerateImageForShot, uploadShotImage } = useStoryboardStore();
 
   // Sync form when modal opens with a shot
   useEffect(() => {
@@ -47,9 +51,38 @@ export function EditModal({ shot, open, onOpenChange }: EditModalProps) {
         actionDescription: shot.actionDescription,
         cameraNote: shot.cameraNote,
         frameDescription: shot.frameDescription,
+        imageUrl: shot.imageUrl,
       });
+      setUploadPreviewUrl(shot.imageUrl || null);
+      setIsUploading(false);
+    } else if (!open) {
+      setUploadPreviewUrl(null);
+      setIsUploading(false);
     }
   }, [shot, open]);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !shot) return;
+    setIsUploading(true);
+    try {
+      await uploadShotImage(shot.id, file);
+      // Create a local preview URL
+      const previewUrl = URL.createObjectURL(file);
+      setUploadPreviewUrl(previewUrl);
+      setFormState((prev) => ({ ...prev, imageUrl: 'uploaded' }));
+      toast.success('Image uploaded successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const updateField = useCallback((field: string, value: string) => {
     setFormState((prev) => ({ ...prev, [field]: value }));
@@ -68,6 +101,9 @@ export function EditModal({ shot, open, onOpenChange }: EditModalProps) {
       frameDescription: formState.frameDescription.trim(),
     });
     toast.success('Shot updated');
+    if (uploadPreviewUrl) {
+      URL.revokeObjectURL(uploadPreviewUrl);
+    }
     onOpenChange(false);
   };
 
@@ -146,6 +182,43 @@ export function EditModal({ shot, open, onOpenChange }: EditModalProps) {
               className="bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] text-sm min-h-[80px] resize-none"
               placeholder="Detailed visual description of the frame composition..."
             />
+          </div>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          {/* Upload Image */}
+          <div className="space-y-2">
+            <Label className="text-xs text-[#8A8A8E] uppercase tracking-wider">Custom Image</Label>
+            <Button
+              type="button"
+              onClick={handleUploadClick}
+              disabled={isUploading}
+              variant="outline"
+              className="w-full bg-[#1A1A1F] border-[#2A2A30] border-dashed text-[#8A8A8E] hover:bg-[#252530] hover:border-[#E8C547] hover:text-[#E8C547] h-10"
+            >
+              {isUploading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              {isUploading ? 'Uploading...' : 'Upload Image'}
+            </Button>
+            {uploadPreviewUrl && (
+              <div className="relative aspect-video rounded-lg overflow-hidden border border-[#2A2A30] mt-2">
+                <img
+                  src={uploadPreviewUrl}
+                  alt="Upload preview"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
           </div>
 
           {/* Actions */}
