@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, isDatabaseAvailable } from '@/lib/db';
+import { db } from '@/lib/db';
 
 export async function GET() {
   try {
-    if (!isDatabaseAvailable()) {
-      return NextResponse.json([]);
-    }
-
-    const storyboards = await db.storyboard.findMany({
+    const storyboards = db.storyboard.findMany({
       orderBy: { updatedAt: 'desc' },
-      include: {
-        shots: {
-          orderBy: { order: 'asc' },
-        },
-      },
+      include: { shots: true },
     });
 
     const formatted = storyboards.map((sb) => ({
@@ -21,10 +13,10 @@ export async function GET() {
       title: sb.title,
       scene: sb.scene,
       style: sb.style,
-      shotCount: sb.shotCount,
-      createdAt: sb.createdAt.toISOString(),
-      updatedAt: sb.updatedAt.toISOString(),
-      shots: sb.shots.map((s) => ({
+      shotCount: sb.shotCount || (sb.shots || []).length,
+      createdAt: sb.createdAt instanceof Date ? sb.createdAt.toISOString() : new Date(sb.createdAt).toISOString(),
+      updatedAt: sb.updatedAt instanceof Date ? sb.updatedAt.toISOString() : new Date(sb.updatedAt).toISOString(),
+      shots: (sb.shots || []).map((s) => ({
         id: s.id,
         shotNumber: s.shotNumber,
         shotType: s.shotType,
@@ -39,7 +31,7 @@ export async function GET() {
     return NextResponse.json(formatted);
   } catch (error) {
     console.error('GET storyboards error:', error);
-    return NextResponse.json({ error: 'Failed to fetch storyboards' }, { status: 500 });
+    return NextResponse.json([], { status: 200 });
   }
 }
 
@@ -52,29 +44,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
     }
 
-    if (!isDatabaseAvailable()) {
-      // Return the data without persisting
-      const id = `sb_${Date.now()}`;
-      return NextResponse.json({
-        id,
-        title: title || 'Untitled Storyboard',
-        scene,
-        style: style || 'Cinematic',
-        shotCount: shotCount || shots?.length || 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        shots: shots || [],
-      });
-    }
-
-    const storyboard = await db.storyboard.create({
+    const storyboard = db.storyboard.create({
       data: {
         title: title || 'Untitled Storyboard',
         scene,
         style: style || 'Cinematic',
         shotCount: shotCount || shots?.length || 0,
         shots: {
-          create: (shots || []).map((shot: { shotNumber: number; shotType: string; actionDescription: string; cameraNote: string; frameDescription: string; imageUrl: string; order: number }) => ({
+          create: (shots || []).map((shot: Record<string, unknown>) => ({
             shotNumber: shot.shotNumber,
             shotType: shot.shotType,
             actionDescription: shot.actionDescription,
@@ -85,7 +62,7 @@ export async function POST(request: NextRequest) {
           })),
         },
       },
-      include: { shots: { orderBy: { order: 'asc' } } },
+      include: { shots: true },
     });
 
     return NextResponse.json({
@@ -93,10 +70,10 @@ export async function POST(request: NextRequest) {
       title: storyboard.title,
       scene: storyboard.scene,
       style: storyboard.style,
-      shotCount: storyboard.shotCount,
-      createdAt: storyboard.createdAt.toISOString(),
-      updatedAt: storyboard.updatedAt.toISOString(),
-      shots: storyboard.shots.map((s) => ({
+      shotCount: storyboard.shotCount || (storyboard.shots || []).length,
+      createdAt: storyboard.createdAt instanceof Date ? storyboard.createdAt.toISOString() : new Date(storyboard.createdAt).toISOString(),
+      updatedAt: storyboard.updatedAt instanceof Date ? storyboard.updatedAt.toISOString() : new Date(storyboard.updatedAt).toISOString(),
+      shots: (storyboard.shots || []).map((s) => ({
         id: s.id,
         shotNumber: s.shotNumber,
         shotType: s.shotType,

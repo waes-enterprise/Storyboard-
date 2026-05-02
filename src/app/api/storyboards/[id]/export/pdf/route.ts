@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, isDatabaseAvailable } from '@/lib/db';
+import { db } from '@/lib/db';
 
 export async function GET(
   _request: NextRequest,
@@ -7,27 +7,28 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    
-    if (!isDatabaseAvailable()) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
-    }
-
-    const storyboard = await db.storyboard.findUnique({
+    const storyboard = db.storyboard.findUnique({
       where: { id },
-      include: { shots: { orderBy: { order: 'asc' } } },
+      include: { shots: true },
     });
 
     if (!storyboard) {
       return NextResponse.json({ error: 'Storyboard not found' }, { status: 404 });
     }
 
-    // Generate HTML for PDF rendering
-    const html = generateStoryboardHTML(storyboard);
+    const sb = storyboard as Record<string, unknown>;
+    const sbShots = (sb.shots || []) as Array<Record<string, unknown>>;
+    const html = generateStoryboardHTML({
+      title: sb.title as string,
+      scene: sb.scene as string,
+      style: sb.style as string,
+      shots: sbShots,
+    });
 
     return new NextResponse(html, {
       headers: {
         'Content-Type': 'text/html',
-        'Content-Disposition': `inline; filename="${storyboard.title.replace(/\s+/g, '_')}_storyboard.html"`,
+        'Content-Disposition': `inline; filename="${(sb.title as string).replace(/\s+/g, '_')}_storyboard.html"`,
       },
     });
   } catch (error) {
@@ -40,17 +41,10 @@ function generateStoryboardHTML(storyboard: {
   title: string;
   scene: string;
   style: string;
-  shots: Array<{
-    shotNumber: number;
-    shotType: string;
-    actionDescription: string;
-    cameraNote: string;
-    imageUrl: string;
-  }>;
+  shots: Array<Record<string, unknown>>;
 }): string {
   const shotCards = storyboard.shots
-    .map(
-      (shot) => `
+    .map((shot) => `
     <div class="shot-card">
       <div class="shot-header">
         <span class="shot-number">SHOT ${shot.shotNumber}</span>
@@ -61,8 +55,7 @@ function generateStoryboardHTML(storyboard: {
         <p class="action">${shot.actionDescription}</p>
         <p class="camera">🎬 ${shot.cameraNote}</p>
       </div>
-    </div>`
-    )
+    </div>`)
     .join('');
 
   return `<!DOCTYPE html>

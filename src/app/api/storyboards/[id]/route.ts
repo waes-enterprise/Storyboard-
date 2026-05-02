@@ -1,5 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db, isDatabaseAvailable } from '@/lib/db';
+import { db } from '@/lib/db';
+
+function formatStoryboard(sb: Record<string, unknown>) {
+  const sbShots = (sb.shots || []) as Array<Record<string, unknown>>;
+  return {
+    id: sb.id,
+    title: sb.title,
+    scene: sb.scene,
+    style: sb.style,
+    shotCount: sb.shotCount || sbShots.length,
+    createdAt: sb.createdAt instanceof Date ? sb.createdAt.toISOString() : new Date(sb.createdAt as string).toISOString(),
+    updatedAt: sb.updatedAt instanceof Date ? sb.updatedAt.toISOString() : new Date(sb.updatedAt as string).toISOString(),
+    shots: sbShots.map((s) => ({
+      id: s.id,
+      shotNumber: s.shotNumber,
+      shotType: s.shotType,
+      actionDescription: s.actionDescription,
+      cameraNote: s.cameraNote,
+      frameDescription: s.frameDescription,
+      imageUrl: s.imageUrl,
+      order: s.order,
+    })),
+  };
+}
 
 export async function GET(
   _request: NextRequest,
@@ -7,41 +30,16 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    
-    if (!isDatabaseAvailable()) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
-    }
-
-    const storyboard = await db.storyboard.findUnique({
+    const storyboard = db.storyboard.findUnique({
       where: { id },
-      include: { shots: { orderBy: { order: 'asc' } } },
+      include: { shots: true },
     });
-
     if (!storyboard) {
       return NextResponse.json({ error: 'Storyboard not found' }, { status: 404 });
     }
-
-    return NextResponse.json({
-      id: storyboard.id,
-      title: storyboard.title,
-      scene: storyboard.scene,
-      style: storyboard.style,
-      shotCount: storyboard.shotCount,
-      createdAt: storyboard.createdAt.toISOString(),
-      updatedAt: storyboard.updatedAt.toISOString(),
-      shots: storyboard.shots.map((s) => ({
-        id: s.id,
-        shotNumber: s.shotNumber,
-        shotType: s.shotType,
-        actionDescription: s.actionDescription,
-        cameraNote: s.cameraNote,
-        frameDescription: s.frameDescription,
-        imageUrl: s.imageUrl,
-        order: s.order,
-      })),
-    });
+    return NextResponse.json(formatStoryboard(storyboard));
   } catch (error) {
-    console.error('GET storyboard by id error:', error);
+    console.error('GET storyboard error:', error);
     return NextResponse.json({ error: 'Failed to fetch storyboard' }, { status: 500 });
   }
 }
@@ -55,14 +53,7 @@ export async function PUT(
     const body = await request.json();
     const { title, scene, style, shotCount, shots } = body;
 
-    if (!isDatabaseAvailable()) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
-    }
-
-    // Delete existing shots and recreate
-    await db.shot.deleteMany({ where: { storyboardId: id } });
-
-    const storyboard = await db.storyboard.update({
+    const storyboard = db.storyboard.update({
       where: { id },
       data: {
         title: title || undefined,
@@ -70,7 +61,7 @@ export async function PUT(
         style: style || undefined,
         shotCount: shotCount || undefined,
         shots: {
-          create: (shots || []).map((shot: { shotNumber: number; shotType: string; actionDescription: string; cameraNote: string; frameDescription: string; imageUrl: string; order: number }) => ({
+          create: (shots || []).map((shot: Record<string, unknown>) => ({
             shotNumber: shot.shotNumber,
             shotType: shot.shotType,
             actionDescription: shot.actionDescription,
@@ -81,28 +72,10 @@ export async function PUT(
           })),
         },
       },
-      include: { shots: { orderBy: { order: 'asc' } } },
+      include: { shots: true },
     });
 
-    return NextResponse.json({
-      id: storyboard.id,
-      title: storyboard.title,
-      scene: storyboard.scene,
-      style: storyboard.style,
-      shotCount: storyboard.shotCount,
-      createdAt: storyboard.createdAt.toISOString(),
-      updatedAt: storyboard.updatedAt.toISOString(),
-      shots: storyboard.shots.map((s) => ({
-        id: s.id,
-        shotNumber: s.shotNumber,
-        shotType: s.shotType,
-        actionDescription: s.actionDescription,
-        cameraNote: s.cameraNote,
-        frameDescription: s.frameDescription,
-        imageUrl: s.imageUrl,
-        order: s.order,
-      })),
-    });
+    return NextResponse.json(formatStoryboard(storyboard));
   } catch (error) {
     console.error('PUT storyboard error:', error);
     return NextResponse.json({ error: 'Failed to update storyboard' }, { status: 500 });
@@ -115,12 +88,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    
-    if (!isDatabaseAvailable()) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
-    }
-
-    await db.storyboard.delete({ where: { id } });
+    db.storyboard.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('DELETE storyboard error:', error);
