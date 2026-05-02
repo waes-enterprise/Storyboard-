@@ -1,27 +1,59 @@
 ---
-Task ID: 1
+Task ID: 2
 Agent: Super Z (main)
-Task: Clone and set up Agent Zero (https://github.com/agent0ai/agent-zero)
+Task: Build Storyboard AI — Cinematic Shot Planner web application
 
 Work Log:
-- Researched agent-zero repository structure and setup requirements
-- Cloned repository to /home/z/my-project/agent-zero
-- Discovered Docker is not available on the environment
-- Identified local development setup path (Python-based, no Docker)
-- Installed core Python dependencies: flask, socketio, uvicorn, litellm, langchain, faiss-cpu, etc.
-- Created stub modules for heavy packages that couldn't be installed due to disk space:
-  - whisper (speech-to-text) - stubbed as load_model returns None
-  - sentence_transformers (embeddings) - stubbed as encode returns zero vectors
-- Fixed langchain compatibility issues by installing older versions (langchain<0.4)
-- Cleaned up disk space (freed 6GB from /tmp/pip build artifacts)
-- Started the server on port 50001 (host 0.0.0.0)
-- Verified health check returns successful response with version v1.10
+- Initialized fullstack dev environment
+- Installed additional packages: jspdf, html2canvas-pro
+- Updated Prisma schema with Storyboard and Shot models, pushed to SQLite database
+- Designed and implemented cinematic dark theme (#0A0A0C bg, #E8C547 gold accent, #F0EDE8 text)
+- Added DM Serif Display + IBM Plex Mono fonts via CSS @font-face
+- Updated layout.tsx with dark class on html, custom Toaster styling
+- Created type definitions: Shot, Storyboard, GenerateRequest, SHOT_TYPES, VISUAL_STYLES
+- Built Zustand store with full state management (shots, CRUD, reorder, hydrate, localStorage persistence)
+- Built API route POST /api/generate (Claude Anthropic integration with claude-sonnet-4-20250514)
+- Built API routes GET/POST /api/storyboards (CRUD with Prisma)
+- Built API routes GET/PUT/DELETE /api/storyboards/[id] (individual storyboard CRUD)
+- Built API route GET /api/storyboards/[id]/export/pdf (HTML-based PDF template generation)
+- Built Sidebar component with: title input, scene textarea, visual style grid, shot count slider, generate button, save/export/new actions, API key input, saved storyboards list
+- Built ShotCard component with: drag handle, shot number/type badges, 16:9 image area with skeleton loading, action description, camera note, hover actions (edit/regen/dup/delete)
+- Built ShotCanvas component with: DndContext drag-and-drop, sortable grid, empty state, image loading progress bar, sequential Pollinations AI image generation
+- Built EditModal component with: shot type dropdown, action/camera/frame editors, save/regen/cancel buttons
+- Built ExportDropdown component with: PNG (html2canvas-pro), PDF (jsPDF), CSV export options
+- Wired everything together in page.tsx with hydrate on mount
+- All API routes verified: GET / 200, GET /api/storyboards 200, POST /api/generate handles errors properly
+
+Files Created:
+- src/types/storyboard.ts — Type definitions
+- src/stores/storyboard.ts — Zustand store
+- src/components/storyboard/Sidebar.tsx — Left sidebar
+- src/components/storyboard/ShotCard.tsx — Individual shot card
+- src/components/storyboard/ShotCanvas.tsx — Main shot grid with DnD
+- src/components/storyboard/EditModal.tsx — Shot editing dialog
+- src/components/storyboard/ExportDropdown.tsx — Export menu
+- src/app/api/generate/route.ts — Claude AI generation endpoint
+- src/app/api/storyboards/route.ts — Storyboards CRUD
+- src/app/api/storyboards/[id]/route.ts — Single storyboard CRUD
+- src/app/api/storyboards/[id]/export/pdf/route.ts — PDF export
+
+Files Modified:
+- prisma/schema.prisma — Storyboard + Shot models
+- src/app/globals.css — Cinematic dark theme, custom scrollbar, animations
+- src/app/layout.tsx — Dark class, custom fonts, Sonner toaster
+- src/app/page.tsx — Main app layout with Sidebar + ShotCanvas
 
 Stage Summary:
-- Agent Zero is running at http://0.0.0.0:50001
-- Process PID: 3393 (running in background)
-- Version: v1.10 (commit 7c71185)
-- Note: Some features are limited without Docker (code execution, shell tools)
-- Note: Whisper STT and sentence-transformers embeddings use stubs
-- User needs to configure LLM API keys in the web UI to start using the agent
-- RFC password error is expected for non-Docker local development setup
+- Fully functional Storyboard AI application
+- Requires Anthropic API key for shot generation (user-provided, stored in localStorage)
+- Free image generation via Pollinations AI (sequential loading)
+- Drag-and-drop shot reordering with auto-renumbering
+- localStorage auto-save + SQLite database persistence
+- Export to PNG, PDF, CSV
+- Cinematic dark UI with gold accents
+
+Known Limitations:
+- Anthropic API key required (user enters in UI)
+- Pollinations AI images are free but quality/style varies
+- PDF export uses jsPDF (not full HTML rendering)
+- No user authentication

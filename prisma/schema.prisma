@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Storyboard {
+  id        String   @id @default(cuid())
+  title     String   @default("Untitled Storyboard")
+  scene     String
+  style     String   @default("Cinematic")
+  shotCount Int      @default(6)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shots     Shot[]
+}
+
+model Shot {
+  id                String     @id @default(cuid())
+  storyboardId      String
+  storyboard        Storyboard @relation(fields: [storyboardId], references: [id], onDelete: Cascade)
+  shotNumber        Int
+  shotType          String     @default("MS")
+  actionDescription String
+  cameraNote        String     @default("")
+  frameDescription  String     @default("")
+  imageUrl          String     @default("")
+  order             Int        @default(0)
+}

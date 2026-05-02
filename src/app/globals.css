@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: 'DM Serif Display';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/dmserifdisplay/v15/rnCu-xZa_krGokauCeNq1wXKNIZdHHxI.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/ibmplexmono/v19/wpxJAtBm5-FUcWoVgBIQ8krbrr9LRt8H.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/ibmplexmono/v19/wpxJAtBm5-FUcWoVgBIQ8krbrr9YRt8H.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/ibmplexmono/v19/wpxJAtBm5-FUcWoVgBIQ8krbrr9eRt8H.woff2') format('woff2');
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'IBM Plex Mono', monospace;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-heading: 'DM Serif Display', serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-gold: #E8C547;
+  --color-gold-dim: #B8992E;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: #0A0A0C;
+  --foreground: #F0EDE8;
+  --card: #131316;
+  --card-foreground: #F0EDE8;
+  --popover: #131316;
+  --popover-foreground: #F0EDE8;
+  --primary: #E8C547;
+  --primary-foreground: #0A0A0C;
+  --secondary: #1A1A1F;
+  --secondary-foreground: #F0EDE8;
+  --muted: #1A1A1F;
+  --muted-foreground: #8A8A8E;
+  --accent: #1A1A1F;
+  --accent-foreground: #F0EDE8;
+  --destructive: #E84747;
+  --border: #2A2A30;
+  --input: #2A2A30;
+  --ring: #E8C547;
+  --chart-1: #E8C547;
+  --chart-2: #C47A2E;
+  --chart-3: #47E88B;
+  --chart-4: #E84788;
+  --chart-5: #47A8E8;
+  --sidebar: #0E0E11;
+  --sidebar-foreground: #F0EDE8;
+  --sidebar-primary: #E8C547;
+  --sidebar-primary-foreground: #0A0A0C;
+  --sidebar-accent: #1A1A1F;
+  --sidebar-accent-foreground: #F0EDE8;
+  --sidebar-border: #2A2A30;
+  --sidebar-ring: #E8C547;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: 'DM Serif Display', serif;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0A0A0C;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2A2A30;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3A3A40;
+}
+
+/* Animated gradient for loading states */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #1A1A1F 25%, #252530 50%, #1A1A1F 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Progress bar animation */
+@keyframes progress-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.progress-pulse {
+  animation: progress-pulse 1.2s ease-in-out infinite;
+}
+
+/* Card hover effect */
+.shot-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.shot-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+}
+
+/* Gold glow */
+.gold-glow {
+  box-shadow: 0 0 20px rgba(232, 197, 71, 0.15);
+}
+
+/* Drag overlay */
+.drag-overlay {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  border-color: #E8C547;
+}
