@@ -20,7 +20,8 @@ import { useStoryboardStore } from '@/stores/storyboard';
 import { ShotCard } from './ShotCard';
 import { EditModal } from './EditModal';
 import type { Shot } from '@/types/storyboard';
-import { Clapperboard, Loader2, ImageIcon } from 'lucide-react';
+import { Clapperboard, Loader2, ImageIcon, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
 export function ShotCanvas() {
@@ -179,17 +180,42 @@ export function ShotCanvas() {
             {shots.length} shot{shots.length !== 1 ? 's' : ''}
           </span>
         </div>
-        {isLoadingImages && (
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-4 h-4 animate-spin text-[#E8C547]" />
-            <span className="text-xs text-[#8A8A8E]">
-              Generating images... {Math.round(imageLoadingProgress)}%
-            </span>
-            <div className="w-32">
-              <Progress value={imageLoadingProgress} className="h-1.5 bg-[#2A2A30]" />
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => {
+              const newShot: Shot = {
+                id: crypto.randomUUID(),
+                shotNumber: shots.length + 1,
+                shotType: 'MS',
+                actionDescription: 'New shot description...',
+                cameraNote: '',
+                frameDescription: '',
+                imageUrl: '',
+                order: shots.length,
+              };
+              useStoryboardStore.getState().addShot(newShot);
+              // Open edit modal for the new shot
+              setEditingShot(newShot);
+              setIsEditModalOpen(true);
+            }}
+            size="sm"
+            className="bg-[#E8C547]/10 border-[#E8C547]/30 text-[#E8C547] hover:bg-[#E8C547]/20 hover:border-[#E8C547] h-8 text-xs"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            Add Shot
+          </Button>
+          {isLoadingImages && (
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-4 h-4 animate-spin text-[#E8C547]" />
+              <span className="text-xs text-[#8A8A8E]">
+                Generating images... {Math.round(imageLoadingProgress)}%
+              </span>
+              <div className="w-32">
+                <Progress value={imageLoadingProgress} className="h-1.5 bg-[#2A2A30]" />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Shot Grid */}

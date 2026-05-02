@@ -19,6 +19,9 @@ import {
   Sparkles,
   Loader2,
   Film,
+  Presentation,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Storyboard } from '@/types/storyboard';
@@ -46,6 +49,11 @@ export function Sidebar() {
     loadStoryboard,
     clearShots,
     setSavedStoryboards,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    setPresentationMode,
   } = useStoryboardStore();
 
   // Load saved storyboards
@@ -319,6 +327,43 @@ export function Sidebar() {
             </Button>
           </div>
 
+          {/* Undo/Redo + Present */}
+          <div className="flex gap-2">
+            <Button
+              onClick={undo}
+              disabled={!canUndo()}
+              variant="outline"
+              size="sm"
+              className="flex-1 bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] hover:bg-[#252530] hover:border-[#E8C547] h-9 disabled:opacity-30"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5 mr-1.5" />
+              Undo
+            </Button>
+            <Button
+              onClick={redo}
+              disabled={!canRedo()}
+              variant="outline"
+              size="sm"
+              className="flex-1 bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] hover:bg-[#252530] hover:border-[#E8C547] h-9 disabled:opacity-30"
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              <Redo2 className="w-3.5 h-3.5 mr-1.5" />
+              Redo
+            </Button>
+            <Button
+              onClick={() => setPresentationMode(true)}
+              disabled={shots.length === 0}
+              variant="outline"
+              size="sm"
+              className="flex-1 bg-[#E8C547]/10 border-[#E8C547]/30 text-[#E8C547] hover:bg-[#E8C547]/20 hover:border-[#E8C547] h-9 disabled:opacity-30"
+              title="Present (Ctrl+P)"
+            >
+              <Presentation className="w-3.5 h-3.5 mr-1.5" />
+              Present
+            </Button>
+          </div>
+
           <Separator className="bg-[#2A2A30]" />
 
           {/* Saved Storyboards */}
@@ -375,7 +420,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-[#2A2A30]">
         <p className="text-[10px] text-[#555] text-center">
-          AI-Powered Storyboard Generator — No API Key Needed
+          Ctrl+Z Undo · Ctrl+Shift+Z Redo · Ctrl+P Present
         </p>
       </div>
     </aside>

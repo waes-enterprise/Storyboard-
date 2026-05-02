@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Shot, Storyboard } from '@/types/storyboard';
 
 const STORAGE_KEY = 'storyboard-ai-session';
+const MAX_UNDO = 50;
 
 function loadFromStorage(): Storyboard | null {
   if (typeof window === 'undefined') return null;
@@ -44,6 +45,16 @@ interface StoryboardState {
   savedStoryboards: Storyboard[];
   editingShot: Shot | null;
   isEditModalOpen: boolean;
+  isPresentationMode: boolean;
+  presentationIndex: number;
+
+  // Undo/Redo
+  undoStack: Shot[][];
+  redoStack: Shot[][];
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  undo: () => void;
+  redo: () => void;
 
   // Actions
   setShots: (shots: Shot[]) => void;
@@ -64,10 +75,22 @@ interface StoryboardState {
   setEditingShot: (shot: Shot | null) => void;
   setIsEditModalOpen: (val: boolean) => void;
   updateShotImageUrl: (id: string, url: string) => void;
+  uploadShotImage: (id: string, file: File) => Promise<void>;
   regenerateImageForShot: (id: string) => void;
   loadStoryboard: (storyboard: Storyboard) => void;
   clearShots: () => void;
   hydrate: () => void;
+  setPresentationMode: (val: boolean) => void;
+  setPresentationIndex: (idx: number) => void;
+  nextShot: () => void;
+  prevShot: () => void;
+}
+
+function pushUndo(state: { shots: Shot[]; undoStack: Shot[][]; redoStack: Shot[][] }) {
+  return {
+    undoStack: [...state.undoStack.slice(-(MAX_UNDO - 1)), state.shots],
+    redoStack: [],
+  };
 }
 
 export const useStoryboardStore = create<StoryboardState>((set, get) => ({
@@ -83,20 +106,46 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   savedStoryboards: [],
   editingShot: null,
   isEditModalOpen: false,
+  isPresentationMode: false,
+  presentationIndex: 0,
+  undoStack: [],
+  redoStack: [],
+
+  canUndo: () => get().undoStack.length > 0,
+  canRedo: () => get().redoStack.length > 0,
+  undo: () => {
+    const { undoStack, redoStack, shots } = get();
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    set({ shots: prev, undoStack: undoStack.slice(0, -1), redoStack: [...redoStack, shots] });
+    saveToStorage(get());
+  },
+  redo: () => {
+    const { undoStack, redoStack, shots } = get();
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    set({ shots: next, undoStack: [...undoStack, shots], redoStack: redoStack.slice(0, -1) });
+    saveToStorage(get());
+  },
 
   setShots: (shots) => {
-    set({ shots });
+    const { undoStack, redoStack } = get();
+    set({ shots, ...pushUndo({ shots: get().shots, undoStack, redoStack }) });
     saveToStorage(get());
   },
 
   addShot: (shot) => {
-    set((state) => ({ shots: [...state.shots, shot] }));
+    set((state) => ({
+      shots: [...state.shots, shot],
+      ...pushUndo(state),
+    }));
     saveToStorage(get());
   },
 
   updateShot: (id, updates) => {
     set((state) => ({
       shots: state.shots.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+      ...pushUndo(state),
     }));
     saveToStorage(get());
   },
@@ -106,6 +155,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       shots: state.shots
         .filter((s) => s.id !== id)
         .map((s, i) => ({ ...s, shotNumber: i + 1, order: i })),
+      ...pushUndo(state),
     }));
     saveToStorage(get());
   },
@@ -125,7 +175,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     const newShots = [...state.shots];
     newShots.splice(idx + 1, 0, newShot);
     const renumbered = newShots.map((s, i) => ({ ...s, shotNumber: i + 1, order: i }));
-    set({ shots: renumbered });
+    set({ shots: renumbered, ...pushUndo(state) });
     saveToStorage(get());
   },
 
@@ -138,7 +188,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       const [removed] = newShots.splice(oldIndex, 1);
       newShots.splice(newIndex, 0, removed);
       const renumbered = newShots.map((s, i) => ({ ...s, shotNumber: i + 1, order: i }));
-      return { shots: renumbered };
+      return { shots: renumbered, ...pushUndo(state) };
     });
     saveToStorage(get());
   },
@@ -186,6 +236,18 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     saveToStorage(get());
   },
 
+  uploadShotImage: async (id, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(data.error || 'Upload failed');
+    }
+    const data = await res.json();
+    get().updateShotImageUrl(id, data.url);
+  },
+
   regenerateImageForShot: (id) => {
     const state = get();
     const shot = state.shots.find((s) => s.id === id);
@@ -217,6 +279,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   },
 
   clearShots: () => {
+    const state = get();
     set({
       shots: [],
       currentStoryboardId: null,
@@ -224,6 +287,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       scene: '',
       style: 'Cinematic',
       shotCount: 6,
+      ...pushUndo(state),
     });
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
@@ -242,5 +306,16 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
         shots: saved.shots || [],
       });
     }
+  },
+
+  setPresentationMode: (val: boolean) => set({ isPresentationMode: val, presentationIndex: 0 }),
+  setPresentationIndex: (idx: number) => set({ presentationIndex: idx }),
+  nextShot: () => {
+    const { shots, presentationIndex } = get();
+    if (presentationIndex < shots.length - 1) set({ presentationIndex: presentationIndex + 1 });
+  },
+  prevShot: () => {
+    const { presentationIndex } = get();
+    if (presentationIndex > 0) set({ presentationIndex: presentationIndex - 1 });
   },
 }));

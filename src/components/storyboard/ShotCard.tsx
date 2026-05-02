@@ -1,15 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Shot } from '@/types/storyboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { GripVertical, Edit3, RefreshCw, Copy, Trash2 } from 'lucide-react';
+import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload } from 'lucide-react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { SHOT_TYPES } from '@/types/storyboard';
+import { toast } from 'sonner';
 
 interface ShotCardProps {
   shot: Shot;
@@ -20,7 +21,30 @@ interface ShotCardProps {
 export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
   const [imageLoaded, setImageLoaded] = useState(!!shot.imageUrl);
   const [imageError, setImageError] = useState(false);
-  const { removeShot, duplicateShot } = useStoryboardStore();
+  const [isUploading, setIsUploading] = useState(false);
+  const { removeShot, duplicateShot, uploadShotImage } = useStoryboardStore();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    setImageError(false);
+    setImageLoaded(false);
+    try {
+      await uploadShotImage(shot.id, file);
+      toast.success('Image uploaded');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const {
     attributes,
@@ -67,8 +91,25 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
           </Badge>
         </div>
 
+        {/* Hidden file input for upload */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
         {/* Hover Actions */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={handleUploadClick}
+            disabled={isUploading}
+            className="p-1.5 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded-md transition-all disabled:opacity-50"
+            title="Upload Image"
+          >
+            <Upload className={`w-3.5 h-3.5 ${isUploading ? 'animate-pulse' : ''}`} />
+          </button>
           <button
             onClick={() => onEdit(shot)}
             className="p-1.5 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded-md transition-all"
