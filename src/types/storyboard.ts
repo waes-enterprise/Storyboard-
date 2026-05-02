@@ -41,6 +41,7 @@ export const SHOT_TYPES = [
 ] as const;
 
 export const VISUAL_STYLES = [
+  { value: 'Raw Documentary', label: 'Raw Documentary' },
   { value: 'Cinematic', label: 'Cinematic' },
   { value: 'Drama', label: 'Drama' },
   { value: 'Music Video', label: 'Music Video' },
