@@ -53,8 +53,8 @@ export function ShotCanvas() {
     setIsLoadingImages(true);
     setImageLoadingProgress(0);
 
-    const CONCURRENCY = 3;
-    const TIMEOUT_MS = 20000;
+    const CONCURRENCY = 4;
+    const TIMEOUT_MS = 15000;
     let completed = 0;
 
     const loadImage = (shot: Shot, index: number): Promise<void> => {
@@ -62,9 +62,9 @@ export function ShotCanvas() {
         const seed = Date.now() + index * 1000 + Math.floor(Math.random() * 1000);
         const prompt = shot.frameDescription || shot.actionDescription;
         const encodedPrompt = encodeURIComponent(
-          `${prompt}, cinematic storyboard pencil sketch black and white film grain`
+          `${prompt}, raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set`
         );
-        const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=640&height=360&nologo=true&seed=${seed}`;
+        const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=960&height=540&nologo=true&seed=${seed}&model=flux`;
 
         let settled = false;
         const done = () => {

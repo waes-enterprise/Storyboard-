@@ -11,45 +11,104 @@ export function KeyboardShortcuts() {
     undo,
     redo,
     shots,
+    editingShot,
+    isEditModalOpen,
     setPresentationMode,
     removeShot,
-    duplicateShot,
+    clearShots,
+    setIsEditModalOpen,
+    setEditingShot,
+    saveToServer,
   } = useStoryboardStore();
 
   useEffect(() => {
     if (isPresentationMode) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs/textareas
+      // Ignore when typing in inputs, textareas, or content-editable elements
       const target = e.target as HTMLElement;
-      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      const isTyping =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable;
       if (isTyping) return;
 
+      const mod = e.ctrlKey || e.metaKey;
+
       // Ctrl/Cmd + Z = Undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      if (mod && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        if (canUndo()) undo();
+        if (canUndo) undo();
+        return;
       }
+
       // Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y = Redo
       if (
-        ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') ||
-        ((e.ctrlKey || e.metaKey) && e.key === 'y')
+        ((mod && e.shiftKey && e.key === 'z') || (mod && e.key === 'y'))
       ) {
         e.preventDefault();
-        if (canRedo()) redo();
+        if (canRedo) redo();
+        return;
       }
+
+      // Ctrl/Cmd + S = Save storyboard
+      if (mod && e.key === 's') {
+        e.preventDefault();
+        if (shots.length > 0) saveToServer();
+        return;
+      }
+
+      // Ctrl/Cmd + N = New / Clear
+      if (mod && e.key === 'n') {
+        e.preventDefault();
+        clearShots();
+        return;
+      }
+
+      // Delete = Remove currently editing shot
+      if (e.key === 'Delete' && editingShot) {
+        e.preventDefault();
+        const shotId = editingShot.id;
+        setIsEditModalOpen(false);
+        setEditingShot(null);
+        removeShot(shotId);
+        return;
+      }
+
+      // Escape = Close edit modal
+      if (e.key === 'Escape' && isEditModalOpen) {
+        e.preventDefault();
+        setIsEditModalOpen(false);
+        setEditingShot(null);
+        return;
+      }
+
       // Ctrl/Cmd + P = Presentation mode
-      if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+      if (mod && e.key === 'p') {
         e.preventDefault();
         if (shots.length > 0) setPresentationMode(true);
+        return;
       }
-      // Ctrl/Cmd + D = Duplicate last selected (no-op without selection — just show hint)
-      // Delete key — handled by individual card focus if needed
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isPresentationMode, canUndo, canRedo, undo, redo, shots, setPresentationMode]);
+  }, [
+    isPresentationMode,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    shots,
+    editingShot,
+    isEditModalOpen,
+    setPresentationMode,
+    removeShot,
+    clearShots,
+    setIsEditModalOpen,
+    setEditingShot,
+    saveToServer,
+  ]);
 
   return null; // No UI — purely handles keyboard events
 }

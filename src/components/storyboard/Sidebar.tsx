@@ -342,7 +342,7 @@ export function Sidebar() {
           <div className="flex gap-2">
             <Button
               onClick={undo}
-              disabled={!canUndo()}
+              disabled={!canUndo}
               variant="outline"
               size="sm"
               className="flex-1 bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] hover:bg-[#252530] hover:border-[#E8C547] h-9 disabled:opacity-30"
@@ -353,7 +353,7 @@ export function Sidebar() {
             </Button>
             <Button
               onClick={redo}
-              disabled={!canRedo()}
+              disabled={!canRedo}
               variant="outline"
               size="sm"
               className="flex-1 bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] hover:bg-[#252530] hover:border-[#E8C547] h-9 disabled:opacity-30"

@@ -8,25 +8,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
     }
 
-    const systemPrompt = `You are an autonomous film director and cinematographer. You create professional shot lists for filmmakers.
+    const systemPrompt = `You are an autonomous film director and cinematographer specializing in raw documentary-style filmmaking. You create professional shot lists that look like real footage captured on a real set with natural lighting.
+
+CRITICAL STYLE RULES for ALL frame descriptions:
+- Describe everything as RAW UNGRADED REAL FOOTAGE — like it was actually filmed on a real camera on a real set
+- Natural sunlight and available practical lights ONLY — no studio lighting, no gels, no colored lights
+- No color grading, no filters, no post-production effects
+- No CGI, no VFX, no animation, no AI enhancement
+- No text, no watermarks, no overlays, no graphics on screen
+- Handheld documentary camera style — organic movement, slight natural shake
+- No zoom in, no zoom out — fixed focal length, camera moves by physically moving
+- Photorealistic, real photography aesthetic — like a behind-the-scenes photo on a real film set
+- Describe real people, real locations, real props — nothing stylized or illustrated
+- Mention natural details: skin texture, fabric wrinkles, dust particles, ambient shadows
 
 Return ONLY a valid JSON array (no markdown, no code fences, no explanation). Each element must have exactly these fields:
 - "shot_number": integer starting from 1
 - "shot_type": one of WS, LS, MS, MCU, CU, OTS, POV, HA, LA, TI
 - "action_description": what happens in this shot (2-3 sentences, specific visual actions)
-- "camera_note": specific camera direction (e.g. "slow dolly left", " handheld push-in", "crane up revealing...", "static wide")
-- "frame_description": detailed visual description of the frame composition for image generation (describe what we SEE, not what happens - include lighting, composition, character positions, setting details)
+- "camera_note": specific camera direction using handheld style (e.g. "handheld walk alongside subject", "operator steps backward revealing room", "static handheld slight drift", "shoulder-mounted follow shot") — NEVER use dolly, crane, slider, or zoom
+- "frame_description": detailed photorealistic description for image generation. Describe EXACTLY what a real camera on set would capture — real lighting conditions, real textures, real environment. Include: time of day, light source direction, shadow patterns, clothing details, prop details, background elements. Write as if describing a photograph taken on a real film set.
 
-Style: ${style}
+Style: Raw Documentary ${style}
 Shot count: exactly ${shotCount} shots
 
-Apply real film grammar:
-- Open with establishing shots (WS/LS)
-- Vary shot sizes to create rhythm
-- Include movement and angle changes
-- Build dramatic tension through shot progression
-- Consider the emotional arc across the sequence
-- Frame descriptions should be evocative and specific enough for image generation`;
+Apply real documentary film grammar:
+- Open with wide establishing shots showing the full environment in natural light
+- Vary shot sizes to create rhythm — get close for reaction, pull back for context
+- Camera should feel like a documentary crew following real events
+- Build tension through proximity and timing, not camera tricks
+- Frame descriptions must be detailed enough to generate a photorealistic image that looks like raw footage`;
 
     const userPrompt = `Create a ${shotCount}-shot storyboard for this scene:
 
