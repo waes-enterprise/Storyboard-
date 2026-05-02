@@ -7,7 +7,7 @@ import type { Shot } from '@/types/storyboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload } from 'lucide-react';
+import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload, Code2, ClipboardCopy } from 'lucide-react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { SHOT_TYPES } from '@/types/storyboard';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
   const [imageLoaded, setImageLoaded] = useState(!!shot.imageUrl);
   const [imageError, setImageError] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
   const { removeShot, duplicateShot, uploadShotImage } = useStoryboardStore();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -62,6 +63,11 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
   };
 
   const shotTypeLabel = SHOT_TYPES.find((t) => t.value === shot.shotType)?.full || shot.shotType;
+
+  const imagePrompt = (() => {
+    const base = shot.frameDescription || shot.actionDescription || '';
+    return `${base}, raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set`;
+  })();
 
   return (
     <div
@@ -132,6 +138,13 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
             <Copy className="w-3.5 h-3.5" />
           </button>
           <button
+            onClick={() => setShowPrompt(!showPrompt)}
+            className={`p-1.5 rounded-md transition-all ${showPrompt ? 'text-[#E8C547] bg-[#E8C547]/10' : 'text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F]'}`}
+            title="Toggle Prompt"
+          >
+            <Code2 className="w-3.5 h-3.5" />
+          </button>
+          <button
             onClick={() => removeShot(shot.id)}
             className="p-1.5 text-[#8A8A8E] hover:text-[#E84747] hover:bg-[#E84747]/10 rounded-md transition-all"
             title="Delete"
@@ -191,6 +204,28 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
           <p className="text-xs text-[#B8992E] italic leading-relaxed">
             🎬 {shot.cameraNote}
           </p>
+        )}
+
+        {/* Prompt Viewer */}
+        {showPrompt && (
+          <div className="mt-3 pt-3 border-t border-[#2A2A30] space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-[#555] uppercase tracking-wider font-medium">Image Prompt</span>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(imagePrompt);
+                  toast.success('Prompt copied');
+                }}
+                className="text-[10px] text-[#8A8A8E] hover:text-[#E8C547] transition-colors flex items-center gap-1"
+              >
+                <ClipboardCopy className="w-3 h-3" />
+                Copy
+              </button>
+            </div>
+            <p className="text-[11px] text-[#8A8A8E] leading-relaxed bg-[#0A0A0C] rounded-lg p-3 break-words select-all">
+              {imagePrompt}
+            </p>
+          </div>
         )}
       </div>
     </div>
