@@ -2,13 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { scene, style, shotCount, apiKey } = await request.json();
+    const { scene, style, shotCount, apiKey: clientApiKey } = await request.json();
 
     if (!scene?.trim()) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
     }
+
+    // Prefer server-side key, fall back to client-provided key
+    const apiKey = process.env.ANTHROPIC_API_KEY || clientApiKey;
     if (!apiKey?.trim()) {
-      return NextResponse.json({ error: 'Anthropic API key is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Anthropic API key is required. Please enter your API key in the sidebar.' },
+        { status: 400 }
+      );
     }
 
     const systemPrompt = `You are an autonomous film director and cinematographer. You create professional shot lists for filmmakers.
@@ -44,7 +50,6 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -57,8 +62,8 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const errorMessage = (errorData as { error?: { message?: string } })?.error?.message || `Anthropic API error: ${response.status}`;
-      return NextResponse.json({ error: errorMessage }, { status: response.status });
+      const errMsg = (errorData as { error?: { message?: string } })?.error?.message || `Anthropic API error: ${response.status}`;
+      return NextResponse.json({ error: errMsg }, { status: response.status });
     }
 
     const data = await response.json() as {
@@ -106,7 +111,7 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
   } catch (error) {
     console.error('Generate API error:', error);
     return NextResponse.json(
-      { error: 'Failed to generate storyboard. Please check your API key and try again.' },
+      { error: 'Failed to generate storyboard. Please try again.' },
       { status: 500 }
     );
   }

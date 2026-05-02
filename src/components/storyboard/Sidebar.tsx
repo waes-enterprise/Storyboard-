@@ -16,7 +16,6 @@ import {
   Save,
   Trash2,
   FolderOpen,
-  ChevronDown,
   Sparkles,
   Loader2,
   Eye,
@@ -136,7 +135,6 @@ export function Sidebar() {
     setIsSaving(true);
     try {
       if (currentStoryboardId) {
-        // Update existing
         const res = await fetch(`/api/storyboards/${currentStoryboardId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -155,7 +153,6 @@ export function Sidebar() {
           toast.error('Failed to update storyboard');
         }
       } else {
-        // Create new
         const res = await fetch('/api/storyboards', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -365,7 +362,7 @@ export function Sidebar() {
                 {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-[10px] text-[#555]">Required for Claude AI shot generation</p>
+            <p className="text-[10px] text-[#555]">Your key is sent securely to our server — never shared directly with Anthropic from your browser</p>
           </div>
 
           <Separator className="bg-[#2A2A30]" />
