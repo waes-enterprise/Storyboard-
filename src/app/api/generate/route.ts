@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const GOOGLE_API_KEY = 'AIzaSyDbKKOXXUlbNJiicthScSFTiaXOMwYIU9s';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`;
+
 // Detect if we're on Vercel (no z-ai-web-dev-sdk available)
 const IS_VERCEL = !!process.env.VERCEL;
 
@@ -50,7 +53,41 @@ Visual style: ${style}
 
 Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must have: shot_number, shot_type, action_description, camera_note, frame_description.`;
 
-    // Strategy 1: z-ai-web-dev-sdk (local Z.ai server only — skip on Vercel)
+    // Strategy 1: Google Gemini API (primary — fast, works everywhere)
+    try {
+      const res = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: `System instructions:\n${systemPrompt}\n\nUser request:\n${userPrompt}` }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 4096,
+            responseMimeType: 'application/json',
+          },
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (textContent) {
+          const shots = parseAndNormalize(textContent);
+          if (shots) return NextResponse.json({ shots });
+        }
+      } else {
+        console.error('Gemini API error:', res.status, await res.text().catch(() => ''));
+      }
+    } catch (err) {
+      console.error('Gemini API failed:', err);
+    }
+
+    // Strategy 2: z-ai-web-dev-sdk (local Z.ai server only — skip on Vercel)
     if (!IS_VERCEL) {
       try {
         const ZAI = (await import('z-ai-web-dev-sdk')).default;
@@ -69,7 +106,7 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
       }
     }
 
-    // Strategy 2: Pollinations AI (free, no key needed, works everywhere)
+    // Strategy 3: Pollinations AI (free fallback, no key needed)
     try {
       const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
         method: 'POST',
