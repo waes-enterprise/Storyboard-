@@ -36,84 +36,51 @@ Visual style: ${style}
 
 Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must have: shot_number, shot_type, action_description, camera_note, frame_description.`;
 
-    // Call the backend generate API (hosted on the Z.ai server)
-    // AI_PROXY_URL should be set to the Cloudflare tunnel URL of the local server
-    const proxyUrl = process.env.AI_PROXY_URL;
-    
-    let textContent: string;
-    
-    if (proxyUrl) {
-      // Forward the request to the backend server via Cloudflare tunnel
-      const response = await fetch(`${proxyUrl}/api/generate`, {
+    // Strategy 1: Try z-ai-web-dev-sdk (works on local Z.ai server)
+    try {
+      const ZAI = (await import('z-ai-web-dev-sdk')).default;
+      const zai = await ZAI.create();
+      const completion = await zai.chat.completions.create({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      });
+      const textContent = completion.choices?.[0]?.message?.content || '';
+      const shots = parseAndNormalize(textContent);
+      if (shots) return NextResponse.json({ shots });
+    } catch {
+      // SDK not available, continue
+    }
+
+    // Strategy 2: Pollinations AI (free, no key needed, works everywhere)
+    try {
+      const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scene, style, shotCount }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Backend proxy error:', response.status, errorText);
-        return NextResponse.json({ error: 'AI backend unavailable', details: errorText }, { status: 502 });
-      }
-
-      const data = await response.json();
-      textContent = JSON.stringify(data.shots || []);
-    } else {
-      // Fallback: try z-ai-web-dev-sdk (only works in Z.ai container)
-      try {
-        const ZAI = (await import('z-ai-web-dev-sdk')).default;
-        const zai = await ZAI.create();
-        const completion = await zai.chat.completions.create({
+        body: JSON.stringify({
+          model: 'openai',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },
           ],
-        });
-        textContent = completion.choices?.[0]?.message?.content || '[]';
-      } catch (sdkError) {
-        console.error('SDK fallback error:', sdkError);
-        return NextResponse.json(
-          { error: 'AI service not configured. Please set the AI_PROXY_URL environment variable.' },
-          { status: 500 }
-        );
+        }),
+        signal: AbortSignal.timeout(90000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const textContent = data.choices?.[0]?.message?.content || '';
+        const shots = parseAndNormalize(textContent);
+        if (shots) return NextResponse.json({ shots });
       }
-    }
-
-    // Try to parse JSON from the response
-    let cleanedText = textContent.trim();
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
-    }
-
-    let shots;
-    try {
-      shots = JSON.parse(cleanedText);
     } catch {
-      const match = cleanedText.match(/\[[\s\S]*\]/);
-      if (match) {
-        shots = JSON.parse(match[0]);
-      } else {
-        return NextResponse.json({ error: 'Failed to parse shot list from AI response. Please try again.' }, { status: 500 });
-      }
+      // Pollinations not available
     }
 
-    if (!Array.isArray(shots)) {
-      return NextResponse.json({ error: 'AI response was not in expected format. Please try again.' }, { status: 500 });
-    }
-
-    // Normalize the shots
-    const normalizedShots = shots.map((shot: Record<string, unknown>, index: number) => ({
-      id: crypto.randomUUID(),
-      shotNumber: (shot.shot_number as number) || index + 1,
-      shotType: (shot.shot_type as string) || 'MS',
-      actionDescription: (shot.action_description as string) || '',
-      cameraNote: (shot.camera_note as string) || '',
-      frameDescription: (shot.frame_description as string) || '',
-      imageUrl: '',
-      order: index,
-    }));
-
-    return NextResponse.json({ shots: normalizedShots });
+    return NextResponse.json(
+      { error: 'AI service is currently unavailable. Please try again.' },
+      { status: 503 }
+    );
   } catch (error) {
     console.error('Generate API error:', error);
     return NextResponse.json(
@@ -121,4 +88,38 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
       { status: 500 }
     );
   }
+}
+
+function parseAndNormalize(text: string) {
+  let cleaned = text.trim();
+  // Strip markdown code fences
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\[[\s\S]*\]/);
+    if (match) {
+      try { parsed = JSON.parse(match[0]); } catch { return null; }
+    } else {
+      return null;
+    }
+  }
+
+  if (!Array.isArray(parsed)) return null;
+  if (parsed.length === 0) return null;
+
+  return parsed.map((shot: Record<string, unknown>, index: number) => ({
+    id: crypto.randomUUID(),
+    shotNumber: Number(shot.shot_number) || index + 1,
+    shotType: String(shot.shot_type || 'MS').toUpperCase().substring(0, 3),
+    actionDescription: String(shot.action_description || ''),
+    cameraNote: String(shot.camera_note || ''),
+    frameDescription: String(shot.frame_description || ''),
+    imageUrl: String(shot.imageUrl || ''),
+    order: index,
+  }));
 }
