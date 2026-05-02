@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,18 +36,50 @@ Visual style: ${style}
 
 Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must have: shot_number, shot_type, action_description, camera_note, frame_description.`;
 
-    // Use built-in z-ai-web-dev-sdk — no external API key needed
-    const zai = await ZAI.create();
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    });
+    // Call the backend generate API (hosted on the Z.ai server)
+    // AI_PROXY_URL should be set to the Cloudflare tunnel URL of the local server
+    const proxyUrl = process.env.AI_PROXY_URL;
+    
+    let textContent: string;
+    
+    if (proxyUrl) {
+      // Forward the request to the backend server via Cloudflare tunnel
+      const response = await fetch(`${proxyUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scene, style, shotCount }),
+      });
 
-    const textContent = completion.choices?.[0]?.message?.content || '[]';
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Backend proxy error:', response.status, errorText);
+        return NextResponse.json({ error: 'AI backend unavailable', details: errorText }, { status: 502 });
+      }
 
-    // Try to parse JSON from the response - handle markdown code fences
+      const data = await response.json();
+      textContent = JSON.stringify(data.shots || []);
+    } else {
+      // Fallback: try z-ai-web-dev-sdk (only works in Z.ai container)
+      try {
+        const ZAI = (await import('z-ai-web-dev-sdk')).default;
+        const zai = await ZAI.create();
+        const completion = await zai.chat.completions.create({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        });
+        textContent = completion.choices?.[0]?.message?.content || '[]';
+      } catch (sdkError) {
+        console.error('SDK fallback error:', sdkError);
+        return NextResponse.json(
+          { error: 'AI service not configured. Please set the AI_PROXY_URL environment variable.' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // Try to parse JSON from the response
     let cleanedText = textContent.trim();
     if (cleanedText.startsWith('```')) {
       cleanedText = cleanedText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
@@ -58,7 +89,6 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
     try {
       shots = JSON.parse(cleanedText);
     } catch {
-      // Try to extract JSON array from the text
       const match = cleanedText.match(/\[[\s\S]*\]/);
       if (match) {
         shots = JSON.parse(match[0]);
