@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Detect if we're on Vercel (no z-ai-web-dev-sdk available)
+const IS_VERCEL = !!process.env.VERCEL;
+
 export async function POST(request: NextRequest) {
   try {
     const { scene, style, shotCount } = await request.json();
@@ -47,21 +50,23 @@ Visual style: ${style}
 
 Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must have: shot_number, shot_type, action_description, camera_note, frame_description.`;
 
-    // Strategy 1: Try z-ai-web-dev-sdk (works on local Z.ai server)
-    try {
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
-      const completion = await zai.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-      });
-      const textContent = completion.choices?.[0]?.message?.content || '';
-      const shots = parseAndNormalize(textContent);
-      if (shots) return NextResponse.json({ shots });
-    } catch {
-      // SDK not available, continue
+    // Strategy 1: z-ai-web-dev-sdk (local Z.ai server only — skip on Vercel)
+    if (!IS_VERCEL) {
+      try {
+        const ZAI = (await import('z-ai-web-dev-sdk')).default;
+        const zai = await ZAI.create();
+        const completion = await zai.chat.completions.create({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        });
+        const textContent = completion.choices?.[0]?.message?.content || '';
+        const shots = parseAndNormalize(textContent);
+        if (shots) return NextResponse.json({ shots });
+      } catch {
+        // SDK not available, continue to fallback
+      }
     }
 
     // Strategy 2: Pollinations AI (free, no key needed, works everywhere)
@@ -76,7 +81,7 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
             { role: 'user', content: userPrompt },
           ],
         }),
-        signal: AbortSignal.timeout(90000),
+        signal: AbortSignal.timeout(60000),
       });
       if (res.ok) {
         const data = await res.json();

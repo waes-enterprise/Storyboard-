@@ -169,9 +169,16 @@
   animation: progress-pulse 1.2s ease-in-out infinite;
 }
 
-/* Card hover effect */
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Card hover effect — GPU accelerated */
 .shot-card {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  will-change: transform;
+  contain: layout style paint;
 }
 
 .shot-card:hover {
@@ -179,13 +186,29 @@
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
 }
 
+/* Smooth image loading */
+.shot-card img {
+  content-visibility: auto;
+}
+
 /* Gold glow */
 .gold-glow {
   box-shadow: 0 0 20px rgba(232, 197, 71, 0.15);
+  will-change: box-shadow;
 }
 
 /* Drag overlay */
 .drag-overlay {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
   border-color: #E8C547;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
