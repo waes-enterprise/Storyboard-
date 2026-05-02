@@ -15,17 +15,48 @@ function loadFromStorage(): Storyboard | null {
   return null;
 }
 
-function saveToStorage(state: StoryboardState) {
+// Debounced storage writes — coalesce rapid updates into a single write
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let savePendingData: Storyboard | null = null;
+
+function scheduleSave(state: StoryboardState) {
   if (typeof window === 'undefined') return;
+  savePendingData = {
+    id: state.currentStoryboardId,
+    title: state.title,
+    scene: state.scene,
+    style: state.style,
+    shotCount: state.shotCount,
+    shots: state.shots,
+  };
+  if (saveTimer) return; // already scheduled
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const data = savePendingData;
+    if (!data) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // quota exceeded or private browsing
+    }
+  }, 300);
+}
+
+function saveToStorageImmediate(state: StoryboardState) {
+  if (typeof window === 'undefined') return;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  const data: Storyboard = {
+    id: state.currentStoryboardId,
+    title: state.title,
+    scene: state.scene,
+    style: state.style,
+    shotCount: state.shotCount,
+    shots: state.shots,
+  };
   try {
-    const data: Storyboard = {
-      id: state.currentStoryboardId,
-      title: state.title,
-      scene: state.scene,
-      style: state.style,
-      shotCount: state.shotCount,
-      shots: state.shots,
-    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // ignore
@@ -75,6 +106,7 @@ interface StoryboardState {
   setEditingShot: (shot: Shot | null) => void;
   setIsEditModalOpen: (val: boolean) => void;
   updateShotImageUrl: (id: string, url: string) => void;
+  flushStorage: () => void;
   regenerateImageForShot: (id: string) => void;
   loadStoryboard: (storyboard: Storyboard) => void;
   clearShots: () => void;
@@ -158,7 +190,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       historyIndex: newIndex,
       ...computeCanUndoRedo(history, newIndex),
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   redo: () => {
@@ -171,7 +203,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       historyIndex: newIndex,
       ...computeCanUndoRedo(history, newIndex),
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   // ---------------------------------------------------------------------------
@@ -187,7 +219,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       const idx = newHistory.length - 1;
       return { shots: newShots, history: newHistory, historyIndex: idx, ...computeCanUndoRedo(newHistory, idx) };
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   addShot: (shot) => {
@@ -199,7 +231,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       const idx = newHistory.length - 1;
       return { shots: newShots, history: newHistory, historyIndex: idx, ...computeCanUndoRedo(newHistory, idx) };
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   updateShot: (id, updates) => {
@@ -211,7 +243,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       const idx = newHistory.length - 1;
       return { shots: newShots, history: newHistory, historyIndex: idx, ...computeCanUndoRedo(newHistory, idx) };
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   removeShot: (id) => {
@@ -225,7 +257,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       const idx = newHistory.length - 1;
       return { shots: newShots, history: newHistory, historyIndex: idx, ...computeCanUndoRedo(newHistory, idx) };
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   duplicateShot: (id) => {
@@ -249,7 +281,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     newHistory = capHistory(newHistory);
     const newIdx = newHistory.length - 1;
     set({ shots: newShots, history: newHistory, historyIndex: newIdx, ...computeCanUndoRedo(newHistory, newIdx) });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   reorderShots: (activeId, overId) => {
@@ -267,7 +299,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       const idx = newHistory.length - 1;
       return { shots: newShots, history: newHistory, historyIndex: idx, ...computeCanUndoRedo(newHistory, idx) };
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   // ---------------------------------------------------------------------------
@@ -276,22 +308,22 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
 
   setCurrentStoryboardId: (id) => {
     set({ currentStoryboardId: id });
-    saveToStorage(get());
+    scheduleSave(get());
   },
 
   setTitle: (title) => {
     set({ title });
-    saveToStorage(get());
+    scheduleSave(get());
   },
 
   setScene: (scene) => {
     set({ scene });
-    saveToStorage(get());
+    scheduleSave(get());
   },
 
   setStyle: (style) => {
     set({ style });
-    saveToStorage(get());
+    scheduleSave(get());
   },
 
   setShotCount: (count) => {
@@ -314,7 +346,19 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     set((state) => ({
       shots: state.shots.map((s) => (s.id === id ? { ...s, imageUrl: url } : s)),
     }));
-    saveToStorage(get());
+    // Debounced — don't save on every single image load
+    scheduleSave(get());
+  },
+
+  flushStorage: () => {
+    if (saveTimer && savePendingData) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(savePendingData));
+      } catch { /* ignore */ }
+      savePendingData = null;
+    }
   },
 
   regenerateImageForShot: (id) => {
@@ -344,7 +388,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
       shotCount: storyboard.shotCount,
       shots: storyboard.shots,
     });
-    saveToStorage(get());
+    saveToStorageImmediate(get());
   },
 
   clearShots: () => {

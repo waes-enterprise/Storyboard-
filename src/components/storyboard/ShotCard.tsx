@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Shot } from '@/types/storyboard';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload, Code2, ClipboardCopy } from 'lucide-react';
 import { useStoryboardStore } from '@/stores/storyboard';
@@ -18,19 +17,38 @@ interface ShotCardProps {
   onRegenerateImage: (shot: Shot) => void;
 }
 
-export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
+export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
   const [imageLoaded, setImageLoaded] = useState(!!shot.imageUrl);
   const [imageError, setImageError] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
-  const { removeShot, duplicateShot, uploadShotImage } = useStoryboardStore();
+  const removeShot = useStoryboardStore((s) => s.removeShot);
+  const duplicateShot = useStoryboardStore((s) => s.duplicateShot);
+  const uploadShotImage = useStoryboardStore((s) => s.uploadShotImage);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
+  // Reset image state when shot URL changes
+  const prevUrlRef = useRef(shot.imageUrl);
+  useEffect(() => {
+    if (shot.imageUrl !== prevUrlRef.current) {
+      setImageLoaded(!!shot.imageUrl);
+      setImageError(false);
+      prevUrlRef.current = shot.imageUrl;
+    }
+  }, [shot.imageUrl]);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Flush storage on unmount to ensure data is saved
+  useEffect(() => {
+    return () => {
+      useStoryboardStore.getState().flushStorage();
+    };
+  }, []);
+
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsUploading(true);
@@ -45,7 +63,7 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  };
+  }, [shot.id, uploadShotImage]);
 
   const {
     attributes,
@@ -138,7 +156,7 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
             <Copy className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => setShowPrompt(!showPrompt)}
+            onClick={() => setShowPrompt((p) => !p)}
             className={`p-1.5 rounded-md transition-all ${showPrompt ? 'text-[#E8C547] bg-[#E8C547]/10' : 'text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F]'}`}
             title="Toggle Prompt"
           >
@@ -168,7 +186,9 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
           <img
             src={shot.imageUrl}
             alt={`Shot ${shot.shotNumber}`}
-            className={`w-full h-full object-cover transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            loading="lazy"
+            decoding="async"
+            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => {
               setImageError(true);
@@ -230,4 +250,4 @@ export function ShotCard({ shot, onEdit, onRegenerateImage }: ShotCardProps) {
       </div>
     </div>
   );
-}
+});
