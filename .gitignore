@@ -50,5 +50,21 @@ test
 prompt
 
 server.log
+dev.log
+dev2.log
+dev-run.log
+start-server.sh
+auto-restart.sh
+keep-alive.sh
+ecosystem.config.js
+Caddyfile
+db/
+download/
+upload/
+logs/
+examples/
+mini-services/
+agent-zero/
+agent_zero_readme.json
 # Skills directory
 /skills/
