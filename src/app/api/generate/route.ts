@@ -1,20 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import ZAI from 'z-ai-web-dev-sdk';
 
 export async function POST(request: NextRequest) {
   try {
-    const { scene, style, shotCount, apiKey: clientApiKey } = await request.json();
+    const { scene, style, shotCount } = await request.json();
 
     if (!scene?.trim()) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
-    }
-
-    // Prefer server-side key, fall back to client-provided key
-    const apiKey = process.env.ANTHROPIC_API_KEY || clientApiKey;
-    if (!apiKey?.trim()) {
-      return NextResponse.json(
-        { error: 'Anthropic API key is required. Please enter your API key in the sidebar.' },
-        { status: 400 }
-      );
     }
 
     const systemPrompt = `You are an autonomous film director and cinematographer. You create professional shot lists for filmmakers.
@@ -45,32 +37,16 @@ Visual style: ${style}
 
 Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must have: shot_number, shot_type, action_description, camera_note, frame_description.`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-      }),
+    // Use built-in z-ai-web-dev-sdk — no external API key needed
+    const zai = await ZAI.create();
+    const completion = await zai.chat.completions.create({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const errMsg = (errorData as { error?: { message?: string } })?.error?.message || `Anthropic API error: ${response.status}`;
-      return NextResponse.json({ error: errMsg }, { status: response.status });
-    }
-
-    const data = await response.json() as {
-      content: Array<{ type: string; text: string }>;
-    };
-
-    const textContent = data.content?.[0]?.text || '[]';
+    const textContent = completion.choices?.[0]?.message?.content || '[]';
 
     // Try to parse JSON from the response - handle markdown code fences
     let cleanedText = textContent.trim();

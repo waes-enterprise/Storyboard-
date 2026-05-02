@@ -18,8 +18,6 @@ import {
   FolderOpen,
   Sparkles,
   Loader2,
-  Eye,
-  EyeOff,
   Film,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,8 +25,6 @@ import type { Storyboard } from '@/types/storyboard';
 import { ExportDropdown } from './ExportDropdown';
 
 export function Sidebar() {
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [isLoadingStoryboards, setIsLoadingStoryboards] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedList, setSavedList] = useState<Storyboard[]>([]);
@@ -51,19 +47,6 @@ export function Sidebar() {
     clearShots,
     setSavedStoryboards,
   } = useStoryboardStore();
-
-  // Load API key from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('storyboard-ai-apikey');
-    if (saved) setApiKey(saved);
-  }, []);
-
-  // Save API key to localStorage on change
-  useEffect(() => {
-    if (apiKey) {
-      localStorage.setItem('storyboard-ai-apikey', apiKey);
-    }
-  }, [apiKey]);
 
   // Load saved storyboards
   const loadSavedStoryboards = useCallback(async () => {
@@ -91,10 +74,6 @@ export function Sidebar() {
       toast.error('Please describe your scene');
       return;
     }
-    if (!apiKey.trim()) {
-      toast.error('Please enter your Anthropic API key');
-      return;
-    }
 
     setIsGenerating(true);
     try {
@@ -105,7 +84,6 @@ export function Sidebar() {
           scene: scene.trim(),
           style,
           shotCount,
-          apiKey: apiKey.trim(),
         }),
       });
 
@@ -343,30 +321,6 @@ export function Sidebar() {
 
           <Separator className="bg-[#2A2A30]" />
 
-          {/* API Key */}
-          <div className="space-y-2">
-            <Label className="text-xs text-[#8A8A8E] uppercase tracking-wider">Anthropic API Key</Label>
-            <div className="relative">
-              <Input
-                type={showApiKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
-                className="bg-[#1A1A1F] border-[#2A2A30] text-[#F0EDE8] placeholder:text-[#555] text-sm pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A8A8E] hover:text-[#F0EDE8] transition-colors"
-              >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            <p className="text-[10px] text-[#555]">Your key is sent securely to our server — never shared directly with Anthropic from your browser</p>
-          </div>
-
-          <Separator className="bg-[#2A2A30]" />
-
           {/* Saved Storyboards */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -421,7 +375,7 @@ export function Sidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-[#2A2A30]">
         <p className="text-[10px] text-[#555] text-center">
-          Powered by Claude + Pollinations AI
+          AI-Powered Storyboard Generator — No API Key Needed
         </p>
       </div>
     </aside>
