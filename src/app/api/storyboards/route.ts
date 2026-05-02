@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, isDatabaseAvailable } from '@/lib/db';
 
 export async function GET() {
   try {
+    if (!isDatabaseAvailable()) {
+      return NextResponse.json([]);
+    }
+
     const storyboards = await db.storyboard.findMany({
       orderBy: { updatedAt: 'desc' },
       include: {
@@ -46,6 +50,21 @@ export async function POST(request: NextRequest) {
 
     if (!scene?.trim()) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
+    }
+
+    if (!isDatabaseAvailable()) {
+      // Return the data without persisting
+      const id = `sb_${Date.now()}`;
+      return NextResponse.json({
+        id,
+        title: title || 'Untitled Storyboard',
+        scene,
+        style: style || 'Cinematic',
+        shotCount: shotCount || shots?.length || 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        shots: shots || [],
+      });
     }
 
     const storyboard = await db.storyboard.create({

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, isDatabaseAvailable } from '@/lib/db';
 
 export async function GET(
   _request: NextRequest,
@@ -7,6 +7,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    
+    if (!isDatabaseAvailable()) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+    }
+
     const storyboard = await db.storyboard.findUnique({
       where: { id },
       include: { shots: { orderBy: { order: 'asc' } } },
@@ -49,6 +54,10 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const { title, scene, style, shotCount, shots } = body;
+
+    if (!isDatabaseAvailable()) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+    }
 
     // Delete existing shots and recreate
     await db.shot.deleteMany({ where: { storyboardId: id } });
@@ -106,6 +115,11 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    
+    if (!isDatabaseAvailable()) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+    }
+
     await db.storyboard.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, isDatabaseAvailable } from '@/lib/db';
 
 export async function GET(
   _request: NextRequest,
@@ -7,6 +7,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    
+    if (!isDatabaseAvailable()) {
+      return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+    }
+
     const storyboard = await db.storyboard.findUnique({
       where: { id },
       include: { shots: { orderBy: { order: 'asc' } } },
