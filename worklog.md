@@ -16,16 +16,31 @@ Work Log:
 - Server running via dev.sh on port 3000 with Caddy gateway on port 81
 
 Stage Summary:
-- Storyboard AI is fully built as a Next.js 16 webapp with:
-  - Server-side Anthropic API proxy (secure key handling)
-  - SQLite database via Prisma (persistent storyboard storage)
-  - CRUD API routes for storyboards
-  - AI shot generation via Claude (Anthropic)
-  - Image generation via Pollinations AI (sequential loading)
-  - Drag-to-reorder shots via @dnd-kit
-  - Edit modal for shot customization
-  - Export: PNG, PDF, CSV
-  - Cinematic dark theme with gold (#E8C547) accents
-  - Responsive design with mobile support
-- The user's Anthropic API key was revoked and needs to be replaced with a fresh one
+- Storyboard AI is fully built as a Next.js 16 webapp
 - App is live at the preview URL
+
+---
+Task ID: 2
+Agent: main
+Task: Major feature update — presentation mode, undo/redo, image upload, parallel loading, keyboard shortcuts, real DB
+
+Work Log:
+- Analyzed entire codebase and identified 15+ missing features/gaps
+- Rewrote src/lib/db.ts: smart database layer using real Prisma Client when DATABASE_URL available, in-memory Map fallback for Vercel
+- Switched Prisma schema from PostgreSQL back to SQLite for local persistence (pushed schema, connected to existing db/custom.db)
+- Added fullscreen PresentationMode component: auto-hide controls (3s), smooth directional slide transitions, progress bar/dots, keyboard nav (arrows/space/home/end/esc), body scroll lock, cursor hiding
+- Added undo/redo history system in Zustand: linear history array (max 50), _pushHistory() called before every mutation, canUndo/canRedo computed booleans, undo()/redo() actions
+- Added keyboard shortcuts component: Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+S save, Ctrl+N new, Ctrl+P present, Delete shot, Escape close modal
+- Added custom image upload: API route /api/upload (validates type/size, converts to base64 data URL), upload button in ShotCard toolbar and EditModal
+- Changed image loading from sequential to parallel (4 concurrent via Promise.allSettled batches, 15s timeout per image)
+- Added "Add Shot" button in canvas toolbar, "Present" button in sidebar, Undo/Redo buttons in sidebar
+- Improved image generation prompt style (raw documentary photography, flux model, 960x540)
+- Removed misleading /api/storyboards/[id]/export/pdf route (returned HTML not PDF)
+- Built successfully, deployed to Vercel production, pushed to GitHub
+
+Stage Summary:
+- All 9 planned improvements completed
+- Vercel: https://my-project-ruby-sigma.vercel.app
+- GitHub: https://github.com/waes-enterprise/Storyboard-
+- Local server running on PM2 (port 3000, real SQLite persistence)
+- New features: presentation mode, undo/redo (50 levels), image upload, parallel loading (4x), keyboard shortcuts, real DB, add shot button
