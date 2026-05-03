@@ -37,6 +37,18 @@ const PresentationMode = dynamic(() => import('./PresentationMode').then((m) => 
 
 const IMAGE_STYLE_SUFFIX = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
 
+// Performance tuning constants
+const IMAGE_CONCURRENCY = 10;
+const IMAGE_TIMEOUT_MS = 8000;
+const IMAGE_WIDTH = 768;
+const IMAGE_HEIGHT = 432;
+const IMAGE_MODEL = 'turbo';
+
+function buildImageUrl(prompt: string, seed: number): string {
+  const encoded = encodeURIComponent(prompt + IMAGE_STYLE_SUFFIX);
+  return `https://image.pollinations.ai/prompt/${encoded}?width=${IMAGE_WIDTH}&height=${IMAGE_HEIGHT}&nologo=true&seed=${seed}&model=${IMAGE_MODEL}&nofeed=true`;
+}
+
 export function ShotCanvas() {
   const shots = useStoryboardStore((s) => s.shots);
   const isLoadingImages = useStoryboardStore((s) => s.isLoadingImages);
@@ -72,7 +84,7 @@ export function ShotCanvas() {
     }
   }, [isLoadingImages, flushStorage]);
 
-  // Parallel image loading — higher concurrency, lower timeout, no delay
+  // Parallel image loading — 10 concurrent, 8s timeout, turbo model, smaller resolution
   const loadImagesInParallel = useCallback(async (shotsToLoad: Shot[]) => {
     if (isImageLoadingRef.current || shotsToLoad.length === 0) return;
 
@@ -80,8 +92,6 @@ export function ShotCanvas() {
     setIsLoadingImages(true);
     setImageLoadingProgress(0);
 
-    const CONCURRENCY = 6;
-    const TIMEOUT_MS = 12000;
     let completed = 0;
     const total = shotsToLoad.length;
 
@@ -89,41 +99,38 @@ export function ShotCanvas() {
       return new Promise<void>((resolve) => {
         const seed = Date.now() + index * 7919 + Math.floor(Math.random() * 1000);
         const prompt = shot.frameDescription || shot.actionDescription;
-        const encodedPrompt = encodeURIComponent(prompt + IMAGE_STYLE_SUFFIX);
-        const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=960&height=540&nologo=true&seed=${seed}&model=flux`;
+        const url = buildImageUrl(prompt, seed);
 
         let settled = false;
         const done = () => {
           if (settled) return;
           settled = true;
           completed++;
-          // Batch progress updates via rAF
           requestAnimationFrame(() => {
             setImageLoadingProgress((completed / total) * 100);
           });
           resolve();
         };
 
+        const timer = setTimeout(done, IMAGE_TIMEOUT_MS);
+
         const img = new Image();
         img.onload = () => {
+          clearTimeout(timer);
           updateShotImageUrl(shot.id, url);
           done();
         };
         img.onerror = () => {
-          updateShotImageUrl(shot.id, url);
+          clearTimeout(timer);
           done();
         };
         img.src = url;
-        setTimeout(() => {
-          updateShotImageUrl(shot.id, url);
-          done();
-        }, TIMEOUT_MS);
       });
     };
 
-    // Process all in parallel up to CONCURRENCY
-    for (let i = 0; i < shotsToLoad.length; i += CONCURRENCY) {
-      const batch = shotsToLoad.slice(i, i + CONCURRENCY);
+    // Process all in parallel up to IMAGE_CONCURRENCY
+    for (let i = 0; i < shotsToLoad.length; i += IMAGE_CONCURRENCY) {
+      const batch = shotsToLoad.slice(i, i + IMAGE_CONCURRENCY);
       await Promise.allSettled(batch.map((shot, batchIdx) => loadImage(shot, i + batchIdx)));
     }
 

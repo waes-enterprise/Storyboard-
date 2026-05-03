@@ -165,14 +165,24 @@ function parseAndNormalize(text: string) {
   if (!Array.isArray(parsed)) return null;
   if (parsed.length === 0) return null;
 
-  return parsed.map((shot: Record<string, unknown>, index: number) => ({
-    id: crypto.randomUUID(),
-    shotNumber: Number(shot.shot_number) || index + 1,
-    shotType: String(shot.shot_type || 'MS').toUpperCase().substring(0, 3),
-    actionDescription: String(shot.action_description || ''),
-    cameraNote: String(shot.camera_note || ''),
-    frameDescription: String(shot.frame_description || ''),
-    imageUrl: String(shot.imageUrl || ''),
-    order: index,
-  }));
+  const STYLE_SUFFIX = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
+  const baseSeed = Date.now();
+
+  return parsed.map((shot: Record<string, unknown>, index: number) => {
+    const prompt = String(shot.frame_description || shot.action_description || '');
+    const encodedPrompt = encodeURIComponent(prompt + STYLE_SUFFIX);
+    const seed = baseSeed + index * 7919;
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=turbo&nofeed=true`;
+
+    return {
+      id: crypto.randomUUID(),
+      shotNumber: Number(shot.shot_number) || index + 1,
+      shotType: String(shot.shot_type || 'MS').toUpperCase().substring(0, 3),
+      actionDescription: String(shot.action_description || ''),
+      cameraNote: String(shot.camera_note || ''),
+      frameDescription: String(shot.frame_description || ''),
+      imageUrl,
+      order: index,
+    };
+  });
 }

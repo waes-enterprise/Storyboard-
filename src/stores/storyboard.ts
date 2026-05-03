@@ -108,6 +108,7 @@ interface StoryboardState {
   updateShotImageUrl: (id: string, url: string) => void;
   flushStorage: () => void;
   regenerateImageForShot: (id: string) => void;
+  uploadShotImage: (id: string, file: File) => Promise<void>;
   loadStoryboard: (storyboard: Storyboard) => void;
   clearShots: () => void;
   hydrate: () => void;
@@ -367,16 +368,33 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     if (!shot) return;
     const seed = Date.now() + Math.floor(Math.random() * 10000);
     const prompt = shot.frameDescription || shot.actionDescription;
-    const encodedPrompt = encodeURIComponent(`${prompt}, raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set`);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=960&height=540&nologo=true&seed=${seed}&model=flux`;
+    const styleSuffix = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
+    const encodedPrompt = encodeURIComponent(prompt + styleSuffix);
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=turbo&nofeed=true`;
     // Clear image first to show loading state
     set((s) => ({
       shots: s.shots.map((sh) => (sh.id === id ? { ...sh, imageUrl: '' } : sh)),
     }));
-    // Set new URL
+    // Set new URL immediately — browser will load it
     setTimeout(() => {
       get().updateShotImageUrl(id, url);
-    }, 100);
+    }, 50);
+  },
+
+  uploadShotImage: async (id, file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        set((s) => ({
+          shots: s.shots.map((sh) => (sh.id === id ? { ...sh, imageUrl: dataUrl } : sh)),
+        }));
+        saveToStorageImmediate(get());
+        resolve();
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
   },
 
   loadStoryboard: (storyboard) => {
