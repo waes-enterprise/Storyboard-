@@ -6,7 +6,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Shot } from '@/types/storyboard';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload, Code2, ClipboardCheck } from 'lucide-react';
+import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload, Code2, ClipboardCheck, Send, Loader2, X } from 'lucide-react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { SHOT_TYPES } from '@/types/storyboard';
 import { toast } from 'sonner';
@@ -23,10 +23,16 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
   const [isUploading, setIsUploading] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  const [editPromptValue, setEditPromptValue] = useState('');
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const removeShot = useStoryboardStore((s) => s.removeShot);
   const duplicateShot = useStoryboardStore((s) => s.duplicateShot);
   const uploadShotImage = useStoryboardStore((s) => s.uploadShotImage);
+  const updateShot = useStoryboardStore((s) => s.updateShot);
+  const regenerateImageWithPrompt = useStoryboardStore((s) => s.regenerateImageWithPrompt);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Reset image state when shot URL changes
   const prevUrlRef = useRef(shot.imageUrl);
@@ -34,9 +40,18 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
     if (shot.imageUrl !== prevUrlRef.current) {
       setImageLoaded(!!shot.imageUrl);
       setImageError(false);
+      setIsRegenerating(false);
       prevUrlRef.current = shot.imageUrl;
     }
   }, [shot.imageUrl]);
+
+  // Focus prompt input when editing mode opens
+  useEffect(() => {
+    if (isEditingPrompt && promptInputRef.current) {
+      promptInputRef.current.focus();
+      promptInputRef.current.selectionStart = promptInputRef.current.value.length;
+    }
+  }, [isEditingPrompt]);
 
   // Flush storage on unmount
   useEffect(() => {
@@ -73,6 +88,36 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
     toast.success('Prompt copied to clipboard');
     setTimeout(() => setCopied(false), 2000);
   }, [shot.frameDescription, shot.actionDescription]);
+
+  const handleOpenPromptEdit = useCallback(() => {
+    setEditPromptValue(shot.frameDescription || shot.actionDescription || '');
+    setIsEditingPrompt(true);
+    setShowPrompt(false);
+  }, [shot.frameDescription, shot.actionDescription]);
+
+  const handlePromptEditSubmit = useCallback(() => {
+    if (!editPromptValue.trim()) {
+      toast.error('Prompt cannot be empty');
+      return;
+    }
+    // Update the frame description in the store
+    updateShot(shot.id, { frameDescription: editPromptValue.trim() });
+    // Regenerate the image with the new prompt
+    setIsRegenerating(true);
+    setIsEditingPrompt(false);
+    regenerateImageWithPrompt(shot.id, editPromptValue.trim());
+    toast.success('Regenerating with new prompt...');
+  }, [editPromptValue, shot.id, updateShot, regenerateImageWithPrompt]);
+
+  const handlePromptEditCancel = useCallback(() => {
+    setIsEditingPrompt(false);
+    setEditPromptValue('');
+  }, []);
+
+  const handleDeleteShot = useCallback(() => {
+    removeShot(shot.id);
+    toast.success(`Shot ${shot.shotNumber} deleted`);
+  }, [shot.id, shot.shotNumber, removeShot]);
 
   const {
     attributes,
@@ -117,6 +162,9 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
           >
             {shot.shotType}
           </Badge>
+          {isRegenerating && (
+            <Loader2 className="w-3 h-3 animate-spin text-[#E8C547]" />
+          )}
         </div>
 
         {/* Hidden file input */}
@@ -128,8 +176,8 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
           className="hidden"
         />
 
-        {/* Hover Actions */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Actions — always visible */}
+        <div className="flex items-center gap-0.5">
           <button
             onClick={handleUploadClick}
             disabled={isUploading}
@@ -141,7 +189,7 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
           <button
             onClick={() => onEdit(shot)}
             className="p-1 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded transition-all"
-            title="Edit"
+            title="Edit Shot Details"
           >
             <Edit3 className="w-3 h-3" />
           </button>
@@ -162,14 +210,15 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
           <button
             onClick={() => setShowPrompt((p) => !p)}
             className={`p-1 rounded transition-all ${showPrompt ? 'text-[#E8C547] bg-[#E8C547]/10' : 'text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F]'}`}
-            title="Toggle Prompt"
+            title="View Prompt"
           >
             <Code2 className="w-3 h-3" />
           </button>
+          {/* Delete button — always visible */}
           <button
-            onClick={() => removeShot(shot.id)}
-            className="p-1 text-[#8A8A8E] hover:text-[#E84747] hover:bg-[#E84747]/10 rounded transition-all"
-            title="Delete"
+            onClick={handleDeleteShot}
+            className="p-1 text-[#E84747]/60 hover:text-[#E84747] hover:bg-[#E84747]/10 rounded transition-all"
+            title="Delete Shot"
           >
             <Trash2 className="w-3 h-3" />
           </button>
@@ -245,35 +294,91 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
           </p>
         )}
 
-        {/* Copy Enhanced Prompt Button */}
-        <button
-          onClick={handleCopyPrompt}
-          className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-md border transition-all w-full justify-center ${
-            copied
-              ? 'bg-green-500/10 border-green-500/30 text-green-400'
-              : 'bg-[#1A1A1F] border-[#2A2A30] text-[#8A8A8E] hover:border-[#E8C547]/50 hover:text-[#E8C547]'
-          }`}
-        >
-          {copied ? (
-            <>
-              <ClipboardCheck className="w-3 h-3" />
-              Copied!
-            </>
-          ) : (
-            <>
-              <Code2 className="w-3 h-3" />
-              Copy Enhanced Prompt
-            </>
-          )}
-        </button>
-
-        {/* Prompt Viewer (expandable) */}
-        {showPrompt && (
-          <div className="pt-2 border-t border-[#2A2A30]">
-            <p className="text-[10px] text-[#8A8A8E] leading-relaxed bg-[#0A0A0C] rounded-lg p-2.5 break-words select-all max-h-32 overflow-y-auto">
-              {shot.frameDescription || shot.actionDescription}
-            </p>
+        {/* Inline Prompt Edit Bar */}
+        {isEditingPrompt ? (
+          <div className="space-y-2 pt-1">
+            <div className="relative">
+              <textarea
+                ref={promptInputRef}
+                value={editPromptValue}
+                onChange={(e) => setEditPromptValue(e.target.value)}
+                className="w-full bg-[#0A0A0C] border border-[#E8C547]/50 text-[#F0EDE8] text-[11px] leading-relaxed rounded-lg p-2.5 pr-20 resize-none min-h-[80px] focus:outline-none focus:border-[#E8C547] placeholder:text-[#555]"
+                placeholder="Edit the image prompt..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    handlePromptEditSubmit();
+                  }
+                  if (e.key === 'Escape') {
+                    handlePromptEditCancel();
+                  }
+                }}
+              />
+              <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
+                <button
+                  onClick={handlePromptEditCancel}
+                  className="p-1 text-[#555] hover:text-[#8A8A8E] rounded transition-colors"
+                  title="Cancel"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={handlePromptEditSubmit}
+                  disabled={!editPromptValue.trim() || isRegenerating}
+                  className="flex items-center gap-1 px-2 py-1 bg-[#E8C547] hover:bg-[#D4B23E] text-[#0A0A0C] rounded-md text-[10px] font-semibold transition-all disabled:opacity-40"
+                >
+                  {isRegenerating ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Send className="w-3 h-3" />
+                  )}
+                  Regenerate
+                </button>
+              </div>
+            </div>
+            <p className="text-[9px] text-[#555]">Ctrl+Enter to submit, Escape to cancel</p>
           </div>
+        ) : (
+          <>
+            {/* Prompt action buttons */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleCopyPrompt}
+                className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-md border transition-all flex-1 justify-center ${
+                  copied
+                    ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                    : 'bg-[#1A1A1F] border-[#2A2A30] text-[#8A8A8E] hover:border-[#E8C547]/50 hover:text-[#E8C547]'
+                }`}
+              >
+                {copied ? (
+                  <>
+                    <ClipboardCheck className="w-3 h-3" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    Copy Prompt
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleOpenPromptEdit}
+                className="flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-md border transition-all flex-1 justify-center bg-[#1A1A1F] border-[#2A2A30] text-[#8A8A8E] hover:border-[#E8C547]/50 hover:text-[#E8C547]"
+              >
+                <Edit3 className="w-3 h-3" />
+                Edit & Regenerate
+              </button>
+            </div>
+
+            {/* Prompt Viewer (expandable) */}
+            {showPrompt && (
+              <div className="pt-2 border-t border-[#2A2A30]">
+                <p className="text-[10px] text-[#8A8A8E] leading-relaxed bg-[#0A0A0C] rounded-lg p-2.5 break-words select-all max-h-32 overflow-y-auto">
+                  {shot.frameDescription || shot.actionDescription}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

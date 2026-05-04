@@ -108,6 +108,7 @@ interface StoryboardState {
   updateShotImageUrl: (id: string, url: string) => void;
   flushStorage: () => void;
   regenerateImageForShot: (id: string) => void;
+  regenerateImageWithPrompt: (id: string, customPrompt: string) => void;
   uploadShotImage: (id: string, file: File) => Promise<void>;
   loadStoryboard: (storyboard: Storyboard) => void;
   clearShots: () => void;
@@ -366,8 +367,14 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     const state = get();
     const shot = state.shots.find((s) => s.id === id);
     if (!shot) return;
-    const seed = Date.now() + Math.floor(Math.random() * 10000);
     const prompt = shot.frameDescription || shot.actionDescription;
+    get().regenerateImageWithPrompt(id, prompt);
+  },
+
+  regenerateImageWithPrompt: (id, customPrompt) => {
+    if (!customPrompt?.trim()) return;
+    const seed = Date.now() + Math.floor(Math.random() * 10000);
+    const prompt = customPrompt.trim();
     const styleSuffix = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
     const encodedPrompt = encodeURIComponent(prompt + styleSuffix);
     const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=turbo&nofeed=true`;
