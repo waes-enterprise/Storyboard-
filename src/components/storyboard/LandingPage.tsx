@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { VISUAL_STYLES } from '@/types/storyboard';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Clapperboard, Sparkles, Loader2, Film, Zap, Eye } from 'lucide-react';
 import { toast } from 'sonner';
+import { generateStoryboard } from '@/lib/generate-client';
 
 interface LandingPageProps {
   onGenerated: () => void;
@@ -33,6 +34,8 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
     clearShots,
   } = useStoryboardStore();
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const handleGenerate = useCallback(async () => {
     if (!scene.trim()) {
       toast.error('Describe your scene first');
@@ -47,36 +50,28 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
       setGenerationStep('AI Director is planning your shots...');
       setProgress(25);
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       let data: { shots?: unknown[]; error?: string };
       try {
         setGenerationStep('AI Director is planning your shots...');
         setProgress(30);
 
-        const res = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            scene: scene.trim(),
-            style,
-            shotCount,
-          }),
-        });
-
-        data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || `Generation failed (${res.status})`);
-        }
+        data = await generateStoryboard(scene.trim(), style, shotCount, controller.signal);
 
         if (!data.shots || !Array.isArray(data.shots) || data.shots.length === 0) {
           throw new Error('AI returned no valid shots. Try a different scene description.');
         }
       } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
         toast.error(err instanceof Error ? err.message : 'Generation failed. Please try again.');
         setIsGenerating(false);
         setProgress(0);
         setGenerationStep('');
         return;
+      } finally {
+        abortRef.current = null;
       }
 
       setGenerationStep('Building your storyboard...');

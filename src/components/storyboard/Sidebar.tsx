@@ -27,6 +27,7 @@ import {
 import { toast } from 'sonner';
 import type { Storyboard } from '@/types/storyboard';
 import { ExportDropdown } from './ExportDropdown';
+import { generateStoryboard } from '@/lib/generate-client';
 
 interface SidebarProps {
   onNewStoryboard?: () => void;
@@ -91,22 +92,7 @@ export function Sidebar({ onNewStoryboard, onOpenDashboard }: SidebarProps) {
 
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scene: scene.trim(),
-          style,
-          shotCount,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.error || 'Failed to generate storyboard');
-        return;
-      }
+      const data = await generateStoryboard(scene.trim(), style, shotCount);
 
       clearShots();
       setShots(data.shots);
@@ -115,8 +101,8 @@ export function Sidebar({ onNewStoryboard, onOpenDashboard }: SidebarProps) {
         setTitle(autoTitle);
       }
       toast.success(`Director planned ${data.shots.length} shots!`);
-    } catch {
-      toast.error('Network error. Please try again.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Network error. Please try again.');
     } finally {
       setIsGenerating(false);
     }
