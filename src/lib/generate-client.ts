@@ -181,6 +181,7 @@ async function callPollinations(
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
+      max_tokens: 8000,
     }),
     signal,
   });
@@ -212,14 +213,24 @@ async function callPollinations(
   }
 
   // Safely extract content from various response formats
-  const textContent =
-    (data && data.choices && Array.isArray(data.choices) && data.choices.length > 0 &&
-     data.choices[0] && data.choices[0].message && typeof data.choices[0].message.content === 'string' &&
-     data.choices[0].message.content) ||
-    (data && data.choices && Array.isArray(data.choices) && data.choices.length > 0 &&
-     data.choices[0] && typeof data.choices[0].text === 'string' &&
-     data.choices[0].text) ||
-    '';
+  // Pollinations sometimes puts the actual response in reasoning_content
+  // instead of message.content (especially for openai-fast model)
+  var choice0 = data && data.choices && Array.isArray(data.choices) && data.choices.length > 0
+    ? data.choices[0] : null;
+  var message = choice0 ? choice0.message : null;
+
+  var textContent = '';
+  if (message && typeof message.content === 'string' && message.content.length > 10) {
+    textContent = message.content;
+  } else if (choice0 && typeof choice0.text === 'string' && choice0.text.length > 10) {
+    textContent = choice0.text;
+  } else if (message && typeof message.reasoning_content === 'string' && message.reasoning_content.length > 10) {
+    textContent = message.reasoning_content;
+    console.warn('[Storyboard] Using reasoning_content instead of content');
+  } else if (message && typeof message.reasoning === 'string' && message.reasoning.length > 10) {
+    textContent = message.reasoning;
+    console.warn('[Storyboard] Using reasoning instead of content');
+  }
 
   console.log('[Storyboard] AI content length:', textContent.length);
   console.log('[Storyboard] AI content preview:', textContent.slice(0, 200));
