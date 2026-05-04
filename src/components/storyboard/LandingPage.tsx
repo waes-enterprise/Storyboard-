@@ -47,26 +47,40 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
       setGenerationStep('AI Director is planning your shots...');
       setProgress(25);
 
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scene: scene.trim(),
-          style,
-          shotCount,
-        }),
-      });
+      let data: { shots?: unknown[]; error?: string };
+      try {
+        setGenerationStep('AI Director is planning your shots...');
+        setProgress(30);
 
-      const data = await res.json();
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scene: scene.trim(),
+            style,
+            shotCount,
+          }),
+        });
 
-      if (!res.ok) {
-        toast.error(data.error || 'Generation failed');
+        data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || `Generation failed (${res.status})`);
+        }
+
+        if (!data.shots || !Array.isArray(data.shots) || data.shots.length === 0) {
+          throw new Error('AI returned no valid shots. Try a different scene description.');
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Generation failed. Please try again.');
         setIsGenerating(false);
+        setProgress(0);
+        setGenerationStep('');
         return;
       }
 
       setGenerationStep('Building your storyboard...');
-      setProgress(75);
+      setProgress(60);
 
       // Store everything
       storeSetTitle(title || scene.trim().slice(0, 50) + (scene.trim().length > 50 ? '...' : ''));

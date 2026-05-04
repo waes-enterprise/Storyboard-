@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   DndContext,
@@ -20,9 +20,8 @@ import {
 import { useStoryboardStore } from '@/stores/storyboard';
 import { ShotCard } from './ShotCard';
 import type { Shot } from '@/types/storyboard';
-import { Clapperboard, Loader2, ImageIcon, Plus } from 'lucide-react';
+import { Clapperboard, ImageIcon, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 
 // Dynamic imports for code splitting — loaded on demand
 const EditModal = dynamic(() => import('./EditModal').then((m) => ({ default: m.EditModal })), {
@@ -35,26 +34,9 @@ const PresentationMode = dynamic(() => import('./PresentationMode').then((m) => 
   loading: () => null,
 });
 
-// Performance tuning constants
-const IMAGE_CONCURRENCY = 10;
-const IMAGE_TIMEOUT_MS = 10000;
-const IMAGE_WIDTH = 768;
-const IMAGE_HEIGHT = 432;
-const IMAGE_MODEL = 'turbo';
-
-function buildImageUrl(prompt: string, seed: number): string {
-  const encoded = encodeURIComponent(prompt);
-  return `https://image.pollinations.ai/prompt/${encoded}?width=${IMAGE_WIDTH}&height=${IMAGE_HEIGHT}&nologo=true&seed=${seed}&model=${IMAGE_MODEL}&nofeed=true`;
-}
-
 export function ShotCanvas() {
   const shots = useStoryboardStore((s) => s.shots);
-  const isLoadingImages = useStoryboardStore((s) => s.isLoadingImages);
-  const imageLoadingProgress = useStoryboardStore((s) => s.imageLoadingProgress);
   const reorderShots = useStoryboardStore((s) => s.reorderShots);
-  const updateShotImageUrl = useStoryboardStore((s) => s.updateShotImageUrl);
-  const setIsLoadingImages = useStoryboardStore((s) => s.setIsLoadingImages);
-  const setImageLoadingProgress = useStoryboardStore((s) => s.setImageLoadingProgress);
   const editingShot = useStoryboardStore((s) => s.editingShot);
   const isEditModalOpen = useStoryboardStore((s) => s.isEditModalOpen);
   const setEditingShot = useStoryboardStore((s) => s.setEditingShot);
@@ -62,88 +44,9 @@ export function ShotCanvas() {
   const isPresentationMode = useStoryboardStore((s) => s.isPresentationMode);
   const addShot = useStoryboardStore((s) => s.addShot);
   const regenerateImageForShot = useStoryboardStore((s) => s.regenerateImageForShot);
-  const flushStorage = useStoryboardStore((s) => s.flushStorage);
 
-  const isImageLoadingRef = useRef(false);
-
-  // Memoize shot IDs for SortableContext to prevent unnecessary recalcs
+  // Memoize shot IDs for SortableContext
   const shotIds = useMemo(() => shots.map((s) => s.id), [shots]);
-
-  // Track which shots need images (memoized)
-  const shotsNeedingImages = useMemo(
-    () => shots.filter((s) => !s.imageUrl && s.frameDescription),
-    [shots]
-  );
-
-  // Flush storage when images finish loading
-  useEffect(() => {
-    if (!isLoadingImages && isImageLoadingRef.current) {
-      flushStorage();
-    }
-  }, [isLoadingImages, flushStorage]);
-
-  // Parallel image loading — 10 concurrent, 8s timeout, turbo model, smaller resolution
-  const loadImagesInParallel = useCallback(async (shotsToLoad: Shot[]) => {
-    if (isImageLoadingRef.current || shotsToLoad.length === 0) return;
-
-    isImageLoadingRef.current = true;
-    setIsLoadingImages(true);
-    setImageLoadingProgress(0);
-
-    let completed = 0;
-    const total = shotsToLoad.length;
-
-    const loadImage = (shot: Shot, index: number): Promise<void> => {
-      return new Promise<void>((resolve) => {
-        const seed = Date.now() + index * 7919 + Math.floor(Math.random() * 1000);
-        const prompt = shot.frameDescription || shot.actionDescription;
-        const url = buildImageUrl(prompt, seed);
-
-        let settled = false;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          completed++;
-          requestAnimationFrame(() => {
-            setImageLoadingProgress((completed / total) * 100);
-          });
-          resolve();
-        };
-
-        const timer = setTimeout(done, IMAGE_TIMEOUT_MS);
-
-        const img = new Image();
-        img.onload = () => {
-          clearTimeout(timer);
-          updateShotImageUrl(shot.id, url);
-          done();
-        };
-        img.onerror = () => {
-          clearTimeout(timer);
-          done();
-        };
-        img.src = url;
-      });
-    };
-
-    // Process all in parallel up to IMAGE_CONCURRENCY
-    for (let i = 0; i < shotsToLoad.length; i += IMAGE_CONCURRENCY) {
-      const batch = shotsToLoad.slice(i, i + IMAGE_CONCURRENCY);
-      await Promise.allSettled(batch.map((shot, batchIdx) => loadImage(shot, i + batchIdx)));
-    }
-
-    setIsLoadingImages(false);
-    isImageLoadingRef.current = false;
-  }, [updateShotImageUrl, setIsLoadingImages, setImageLoadingProgress]);
-
-  // Trigger image loading immediately when shots change (no 500ms delay)
-  useEffect(() => {
-    if (shotsNeedingImages.length > 0) {
-      // Use rAF to avoid blocking render
-      const raf = requestAnimationFrame(() => loadImagesInParallel(shotsNeedingImages));
-      return () => cancelAnimationFrame(raf);
-    }
-  }, [shotsNeedingImages, loadImagesInParallel]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -201,7 +104,7 @@ export function ShotCanvas() {
             <p className="text-sm text-[#8A8A8E] leading-relaxed">
               Describe your scene in the sidebar and click
               <span className="text-[#E8C547] font-medium"> Generate Storyboard </span>
-              to create your cinematic shot list powered by Claude AI.
+              to create your cinematic shot list.
             </p>
           </div>
           <div className="flex items-center justify-center gap-6 text-xs text-[#555]">
@@ -231,15 +134,14 @@ export function ShotCanvas() {
   return (
     <>
       <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
-      {/* Status bar */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <h2 className="font-heading text-xl text-[#F0EDE8]">Shot Canvas</h2>
-          <span className="text-xs text-[#8A8A8E] bg-[#1A1A1F] px-2.5 py-1 rounded-full border border-[#2A2A30]">
-            {shots.length} shot{shots.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
+        {/* Status bar */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <h2 className="font-heading text-xl text-[#F0EDE8]">Shot Canvas</h2>
+            <span className="text-xs text-[#8A8A8E] bg-[#1A1A1F] px-2.5 py-1 rounded-full border border-[#2A2A30]">
+              {shots.length} shot{shots.length !== 1 ? 's' : ''}
+            </span>
+          </div>
           <Button
             onClick={handleAddShot}
             size="sm"
@@ -248,54 +150,42 @@ export function ShotCanvas() {
             <Plus className="w-3.5 h-3.5 mr-1.5" />
             Add Shot
           </Button>
-          {isLoadingImages && (
-            <div className="flex items-center gap-3">
-              <Loader2 className="w-4 h-4 animate-spin text-[#E8C547]" />
-              <span className="text-xs text-[#8A8A8E]">
-                Generating images... {Math.round(imageLoadingProgress)}%
-              </span>
-              <div className="w-32">
-                <Progress value={imageLoadingProgress} className="h-1.5 bg-[#2A2A30]" />
-              </div>
-            </div>
-          )}
         </div>
-      </div>
 
-      {/* Shot Grid */}
-      <div id="shot-canvas">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={shotIds} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {shots.map((shot) => (
-                <ShotCard
-                  key={shot.id}
-                  shot={shot}
-                  onEdit={handleEdit}
-                  onRegenerateImage={handleRegenerateImage}
-                />
-              ))}
-            </div>
-          </SortableContext>
-          <DragOverlay>
-            <div className="drag-overlay bg-[#131316] border-2 border-[#E8C547] rounded-xl p-4 opacity-90">
-              <p className="text-sm text-[#E8C547]">Dragging shot...</p>
-            </div>
-          </DragOverlay>
-        </DndContext>
-      </div>
+        {/* Shot Grid */}
+        <div id="shot-canvas">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={shotIds} strategy={rectSortingStrategy}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {shots.map((shot) => (
+                  <ShotCard
+                    key={shot.id}
+                    shot={shot}
+                    onEdit={handleEdit}
+                    onRegenerateImage={handleRegenerateImage}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+            <DragOverlay>
+              <div className="drag-overlay bg-[#131316] border-2 border-[#E8C547] rounded-xl p-4 opacity-90">
+                <p className="text-sm text-[#E8C547]">Dragging shot...</p>
+              </div>
+            </DragOverlay>
+          </DndContext>
+        </div>
 
-      {/* Edit Modal */}
-      <EditModal
-        shot={editingShot}
-        open={isEditModalOpen}
-        onOpenChange={setIsEditModalOpen}
-      />
-    </div>
+        {/* Edit Modal */}
+        <EditModal
+          shot={editingShot}
+          open={isEditModalOpen}
+          onOpenChange={setIsEditModalOpen}
+        />
+      </div>
 
       {/* Fullscreen Presentation Mode */}
       {isPresentationMode && <PresentationMode />}

@@ -30,7 +30,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const storyboard = db.storyboard.findUnique({
+    const storyboard = (db as any).storyboard.findUnique({
       where: { id },
       include: { shots: true },
     });
@@ -53,7 +53,7 @@ export async function PUT(
     const body = await request.json();
     const { title, scene, style, shotCount, shots } = body;
 
-    const storyboard = db.storyboard.update({
+    const storyboard = (db as any).storyboard.update({
       where: { id },
       data: {
         title: title || undefined,
@@ -88,7 +88,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    db.storyboard.delete({ where: { id } });
+    (db as any).storyboard.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('DELETE storyboard error:', error);
