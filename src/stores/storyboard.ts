@@ -377,7 +377,7 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
     const prompt = customPrompt.trim();
     const styleSuffix = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
     const encodedPrompt = encodeURIComponent(prompt + styleSuffix);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=turbo&nofeed=true`;
+    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=flux&nofeed=true`;
     // Clear image first to show loading state
     set((s) => ({
       shots: s.shots.map((sh) => (sh.id === id ? { ...sh, imageUrl: '' } : sh)),

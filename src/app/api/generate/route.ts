@@ -69,42 +69,6 @@ export async function POST(request: NextRequest) {
       console.error('Pollinations API failed:', err);
     }
 
-    // ═══════════════════════════════════════════════════════
-    // Strategy 3: Gemini API (legacy fallback — often quota-exhausted)
-    // ═══════════════════════════════════════════════════════
-    try {
-      const GEMINI_KEY = process.env.GEMINI_API_KEY;
-      if (GEMINI_KEY) {
-        const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
-        const res = await fetch(GEMINI_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              { parts: [{ text: `System instructions:\n${systemPrompt}\n\nUser request:\n${userPrompt}` }] },
-            ],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 8192,
-              responseMimeType: 'application/json',
-            },
-          }),
-          signal: AbortSignal.timeout(60000),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (textContent) {
-            const result = parseAndNormalize(textContent);
-            if (result) return NextResponse.json(result);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Gemini API failed:', err);
-    }
-
     return NextResponse.json(
       { error: 'All AI services are currently unavailable. Please try again in a moment.' },
       { status: 503 }
@@ -207,7 +171,7 @@ function parseAndNormalize(text: string) {
     const encodedPrompt = encodeURIComponent(fullPrompt + NEGATIVE_SUFFIX);
     // Sequential seeds for consistency across shots
     const seed = baseSeed + index * 100;
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=turbo&nofeed=true`;
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=flux&nofeed=true`;
 
     return {
       id: crypto.randomUUID(),
