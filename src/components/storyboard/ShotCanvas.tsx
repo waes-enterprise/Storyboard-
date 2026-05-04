@@ -35,17 +35,15 @@ const PresentationMode = dynamic(() => import('./PresentationMode').then((m) => 
   loading: () => null,
 });
 
-const IMAGE_STYLE_SUFFIX = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
-
 // Performance tuning constants
 const IMAGE_CONCURRENCY = 10;
-const IMAGE_TIMEOUT_MS = 8000;
+const IMAGE_TIMEOUT_MS = 10000;
 const IMAGE_WIDTH = 768;
 const IMAGE_HEIGHT = 432;
 const IMAGE_MODEL = 'turbo';
 
 function buildImageUrl(prompt: string, seed: number): string {
-  const encoded = encodeURIComponent(prompt + IMAGE_STYLE_SUFFIX);
+  const encoded = encodeURIComponent(prompt);
   return `https://image.pollinations.ai/prompt/${encoded}?width=${IMAGE_WIDTH}&height=${IMAGE_HEIGHT}&nologo=true&seed=${seed}&model=${IMAGE_MODEL}&nofeed=true`;
 }
 

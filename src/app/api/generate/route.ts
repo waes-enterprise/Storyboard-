@@ -14,36 +14,81 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
     }
 
-    const systemPrompt = `You are an autonomous film director and cinematographer specializing in raw documentary-style filmmaking. You create professional shot lists that look like real footage captured on a real set with natural lighting.
+    const systemPrompt = `You are an elite film director and master cinematographer with 30 years of experience in documentary and narrative filmmaking. You create shot lists with ABSOLUTE visual continuity — every frame looks like it was captured on the same day, in the same location, with the same camera and lighting.
 
-CRITICAL STYLE RULES for ALL frame descriptions:
-- Describe everything as RAW UNGRADED REAL FOOTAGE — like it was actually filmed on a real camera on a real set
-- Natural sunlight and available practical lights ONLY — no studio lighting, no gels, no colored lights
-- No color grading, no filters, no post-production effects
-- No CGI, no VFX, no animation, no AI enhancement
-- No text, no watermarks, no overlays, no graphics on screen
-- Handheld documentary camera style — organic movement, slight natural shake
-- No zoom in, no zoom out — fixed focal length, camera moves by physically moving
-- Photorealistic, real photography aesthetic — like a behind-the-scenes photo on a real film set
-- Describe real people, real locations, real props — nothing stylized or illustrated
-- Mention natural details: skin texture, fabric wrinkles, dust particles, ambient shadows
+═══ CONTINUITY PROTOCOL ═══
+Before planning any shot, you must internally lock these elements and NEVER deviate:
 
-Return ONLY a valid JSON array (no markdown, no code fences, no explanation). Each element must have exactly these fields:
-- "shot_number": integer starting from 1
-- "shot_type": one of WS, LS, MS, MCU, CU, OTS, POV, HA, LA, TI
-- "action_description": what happens in this shot (2-3 sentences, specific visual actions)
-- "camera_note": specific camera direction using handheld style (e.g. "handheld walk alongside subject", "operator steps backward revealing room", "static handheld slight drift", "shoulder-mounted follow shot") — NEVER use dolly, crane, slider, or zoom
-- "frame_description": detailed photorealistic description for image generation. Describe EXACTLY what a real camera on set would capture — real lighting conditions, real textures, real environment. Include: time of day, light source direction, shadow patterns, clothing details, prop details, background elements. Write as if describing a photograph taken on a real film set.
+CHARACTER BIBLE — describe EVERY character in the scene in extreme detail:
+- Full physical description: age, ethnicity, gender, height, build, body type
+- Face: shape, skin tone, eye color, eyebrow shape, nose shape, lip shape, jawline
+- Hair: style, length, color, texture, how it falls
+- Clothing: exact outfit — shirt/top color and type, pants/skirt, jacket, shoes, accessories
+- Distinguishing marks: scars, tattoos, glasses, jewelry, freckles
+- YOU MUST use the EXACT SAME character description in EVERY shot's frame_description
 
-Style: Raw Documentary ${style}
-Shot count: exactly ${shotCount} shots
+ENVIRONMENT BIBLE — describe the location in extreme detail:
+- Location type: interior/exterior, specific room or place
+- Architecture: wall color/material, ceiling, floor material and color
+- Furniture and props: specific items with placement, materials, colors
+- Weather/atmosphere: clear, overcast, dust, humidity
+- Lighting: direction of natural light, quality (soft/hard), color temperature
+- Time of day: be specific (e.g. "mid-morning, 9:30 AM, golden hour light from east")
+- YOU MUST use the EXACT SAME environment in EVERY shot's frame_description
 
-Apply real documentary film grammar:
-- Open with wide establishing shots showing the full environment in natural light
-- Vary shot sizes to create rhythm — get close for reaction, pull back for context
-- Camera should feel like a documentary crew following real events
-- Build tension through proximity and timing, not camera tricks
-- Frame descriptions must be detailed enough to generate a photorealistic image that looks like raw footage`;
+═══ CRITICAL IMAGE RULES ═══
+Every frame_description is a STANDALONE image generation prompt. It MUST include:
+1. The full character bible (same exact words in every shot)
+2. The full environment bible (same exact words in every shot)
+3. The shot-specific action, framing, and composition
+4. Lighting details (consistent across all shots)
+5. Camera/lens info (e.g. "shot on 35mm prime lens, shallow depth of field")
+6. Texture details: fabric weave, skin pores, wood grain, concrete texture, dust motes
+7. Atmosphere: light rays, reflections, shadows, ambient particles
+
+ABSOLUTE NEGATIVE PROMPT (never include in any frame):
+- NO color grading, NO filters, NO post-production effects
+- NO CGI, NO VFX, NO animation, NO illustration
+- NO text, NO watermarks, NO overlays, NO graphics, NO subtitles
+- NO studio lighting, NO gels, NO colored lights, NO ring lights
+- NO zoom, NO dolly, NO crane, NO slider, NO gimbal, NO drone
+- NO AI look, NO plastic skin, NO oversharpened details
+
+═══ SHOT GRAMMAR (film school rules) ═══
+Professional shot rhythm for ${shotCount} shots:
+- Shots 1-2: Wide establishing — show full environment in natural light
+- Shots 3-4: Medium shots — introduce characters in context
+- Shots 5-7: Close-ups — capture emotion, reaction, detail
+- Shots 8-9: Dynamic shots — movement, tension, energy shift
+- Shot ${shotCount}: Resolution — wide or medium showing scene outcome
+
+Camera directions use HANDHELD language ONLY:
+- "handheld walk alongside subject tracking left"
+- "operator steps backward revealing the full room"
+- "shoulder-mounted follow shot, slight drift right"
+- "static handheld, organic micro-movements"
+- "operator crouches and tilts up slowly"
+NEVER use: dolly, crane, slider, zoom, steadicam, jib, gimbal, drone, track
+
+═══ OUTPUT FORMAT ═══
+Return ONLY a valid JSON array with NO markdown fences, NO explanation.
+Each element must have exactly these fields:
+
+{
+  "shot_number": 1,
+  "shot_type": "WS",
+  "action_description": "Specific visual actions in 2-3 sentences. What the character DOES, not what they feel.",
+  "camera_note": "Handheld camera direction describing operator movement",
+  "frame_description": "COMPLETE standalone image prompt. 4-6 sentences of extreme visual detail. MUST start with character description, then environment, then action/framing. This is used directly for AI image generation."
+}
+
+Shot types: WS (Wide Shot), LS (Long Shot), MS (Medium Shot), MCU (Medium Close-Up), CU (Close-Up), OTS (Over the Shoulder), POV (Point of View), HA (High Angle), LA (Low Angle), TI (Two Shot)
+
+Style: ${style}
+Shot count: EXACTLY ${shotCount} shots
+Scene: "${scene}"
+
+Remember: EVERY frame_description must contain the EXACT SAME character and environment descriptions. This is non-negotiable for visual continuity.`;
 
     const userPrompt = `Create a ${shotCount}-shot storyboard for this scene:
 
@@ -51,9 +96,16 @@ Apply real documentary film grammar:
 
 Visual style: ${style}
 
-Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must have: shot_number, shot_type, action_description, camera_note, frame_description.`;
+CRITICAL CONTINUITY REQUIREMENT:
+1. First, mentally create a detailed character bible (physical appearance, clothing, distinguishing features)
+2. Mentally create an environment bible (location, lighting, time of day, props)
+3. Write EVERY frame_description starting with the SAME character and environment descriptions
+4. Only the action/framing/composition should differ between shots
+5. This ensures all ${shotCount} images look like they're from the same scene
 
-    // Strategy 1: Google Gemini API (primary — fast, works everywhere)
+Return ONLY a JSON array with ${shotCount} shot objects.`;
+
+    // Strategy 1: Google Gemini API (primary)
     try {
       const res = await fetch(GEMINI_URL, {
         method: 'POST',
@@ -65,20 +117,20 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
             },
           ],
           generationConfig: {
-            temperature: 0.8,
-            maxOutputTokens: 4096,
+            temperature: 0.7,
+            maxOutputTokens: 8192,
             responseMimeType: 'application/json',
           },
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(60000),
       });
 
       if (res.ok) {
         const data = await res.json();
         const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (textContent) {
-          const shots = parseAndNormalize(textContent);
-          if (shots) return NextResponse.json({ shots });
+          const result = parseAndNormalize(textContent);
+          if (result) return NextResponse.json(result);
         }
       } else {
         console.error('Gemini API error:', res.status, await res.text().catch(() => ''));
@@ -87,7 +139,7 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
       console.error('Gemini API failed:', err);
     }
 
-    // Strategy 2: z-ai-web-dev-sdk (local Z.ai server only — skip on Vercel)
+    // Strategy 2: z-ai-web-dev-sdk (local Z.ai server only)
     if (!IS_VERCEL) {
       try {
         const ZAI = (await import('z-ai-web-dev-sdk')).default;
@@ -99,14 +151,14 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
           ],
         });
         const textContent = completion.choices?.[0]?.message?.content || '';
-        const shots = parseAndNormalize(textContent);
-        if (shots) return NextResponse.json({ shots });
+        const result = parseAndNormalize(textContent);
+        if (result) return NextResponse.json(result);
       } catch {
-        // SDK not available, continue to fallback
+        // SDK not available
       }
     }
 
-    // Strategy 3: Pollinations AI (free fallback, no key needed)
+    // Strategy 3: Pollinations AI (free fallback)
     try {
       const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
         method: 'POST',
@@ -123,8 +175,8 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
       if (res.ok) {
         const data = await res.json();
         const textContent = data.choices?.[0]?.message?.content || '';
-        const shots = parseAndNormalize(textContent);
-        if (shots) return NextResponse.json({ shots });
+        const result = parseAndNormalize(textContent);
+        if (result) return NextResponse.json(result);
       }
     } catch {
       // Pollinations not available
@@ -143,9 +195,10 @@ Remember: return ONLY a JSON array with ${shotCount} shot objects. Each must hav
   }
 }
 
+const NEGATIVE_SUFFIX = ', raw ungraded documentary footage from real camera SD card, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays no subtitles no graphics, handheld documentary camera style, real photography photorealistic, natural lens no zoom, candid moment captured on set, film grain, natural skin texture, no plastic skin';
+
 function parseAndNormalize(text: string) {
   let cleaned = text.trim();
-  // Strip markdown code fences
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
   }
@@ -165,13 +218,22 @@ function parseAndNormalize(text: string) {
   if (!Array.isArray(parsed)) return null;
   if (parsed.length === 0) return null;
 
-  const STYLE_SUFFIX = ', raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set';
+  // Extract continuity anchor from the first shot's frame_description
+  // This ensures all image prompts share the same character/environment base
+  const firstFrame = String(parsed[0]?.frame_description || '');
+  const continuityAnchor = extractContinuityAnchor(firstFrame);
+
   const baseSeed = Date.now();
 
-  return parsed.map((shot: Record<string, unknown>, index: number) => {
+  const shots = parsed.map((shot: Record<string, unknown>, index: number) => {
     const prompt = String(shot.frame_description || shot.action_description || '');
-    const encodedPrompt = encodeURIComponent(prompt + STYLE_SUFFIX);
-    const seed = baseSeed + index * 7919;
+    // Build the full image prompt with continuity anchor
+    const fullPrompt = continuityAnchor
+      ? `${continuityAnchor}. ${prompt}`
+      : prompt;
+    const encodedPrompt = encodeURIComponent(fullPrompt + NEGATIVE_SUFFIX);
+    // Use sequential seeds close together for visual consistency
+    const seed = baseSeed + index * 100;
     const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=768&height=432&nologo=true&seed=${seed}&model=turbo&nofeed=true`;
 
     return {
@@ -180,9 +242,29 @@ function parseAndNormalize(text: string) {
       shotType: String(shot.shot_type || 'MS').toUpperCase().substring(0, 3),
       actionDescription: String(shot.action_description || ''),
       cameraNote: String(shot.camera_note || ''),
-      frameDescription: String(shot.frame_description || ''),
+      frameDescription: fullPrompt,
       imageUrl,
       order: index,
     };
   });
+
+  return { shots, continuityAnchor };
+}
+
+/**
+ * Extract the continuity anchor from the first frame description.
+ * This captures the shared character and environment description
+ * that should be prepended to all subsequent image prompts.
+ */
+function extractContinuityAnchor(frameDescription: string): string {
+  if (!frameDescription) return '';
+
+  // Split into sentences and take the first 2-3 which typically describe characters/environment
+  const sentences = frameDescription.split(/(?<=[.!?])\s+/);
+  if (sentences.length <= 2) return frameDescription;
+
+  // Take first 2-3 sentences as the continuity anchor
+  // (these usually describe who the characters are and where they are)
+  const anchorSentences = sentences.slice(0, Math.min(3, Math.ceil(sentences.length * 0.4)));
+  return anchorSentences.join(' ');
 }

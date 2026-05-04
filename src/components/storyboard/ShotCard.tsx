@@ -6,7 +6,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Shot } from '@/types/storyboard';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload, Code2, ClipboardCopy } from 'lucide-react';
+import { GripVertical, Edit3, RefreshCw, Copy, Trash2, Upload, Code2, ClipboardCheck } from 'lucide-react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { SHOT_TYPES } from '@/types/storyboard';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
   const [imageError, setImageError] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [copied, setCopied] = useState(false);
   const removeShot = useStoryboardStore((s) => s.removeShot);
   const duplicateShot = useStoryboardStore((s) => s.duplicateShot);
   const uploadShotImage = useStoryboardStore((s) => s.uploadShotImage);
@@ -37,7 +38,7 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
     }
   }, [shot.imageUrl]);
 
-  // Flush storage on unmount to ensure data is saved
+  // Flush storage on unmount
   useEffect(() => {
     return () => {
       useStoryboardStore.getState().flushStorage();
@@ -65,6 +66,14 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
     }
   }, [shot.id, uploadShotImage]);
 
+  const handleCopyPrompt = useCallback(() => {
+    const imagePrompt = shot.frameDescription || shot.actionDescription || '';
+    navigator.clipboard.writeText(imagePrompt);
+    setCopied(true);
+    toast.success('Prompt copied to clipboard');
+    setTimeout(() => setCopied(false), 2000);
+  }, [shot.frameDescription, shot.actionDescription]);
+
   const {
     attributes,
     listeners,
@@ -82,11 +91,6 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
 
   const shotTypeLabel = SHOT_TYPES.find((t) => t.value === shot.shotType)?.full || shot.shotType;
 
-  const imagePrompt = (() => {
-    const base = shot.frameDescription || shot.actionDescription || '';
-    return `${base}, raw ungraded footage, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays, handheld documentary camera style, real photography, photorealistic, natural lens, no zoom, candid moment captured on set`;
-  })();
-
   return (
     <div
       ref={setNodeRef}
@@ -94,28 +98,28 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
       className="shot-card bg-[#131316] border border-[#2A2A30] rounded-xl overflow-hidden group"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2A2A30] bg-[#0E0E11]/50">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between px-3.5 py-2 border-b border-[#2A2A30] bg-[#0E0E11]/50">
+        <div className="flex items-center gap-2">
           <button
             {...attributes}
             {...listeners}
             className="text-[#555] hover:text-[#E8C547] cursor-grab active:cursor-grabbing transition-colors"
           >
-            <GripVertical className="w-4 h-4" />
+            <GripVertical className="w-3.5 h-3.5" />
           </button>
-          <Badge className="bg-[#E8C547] text-[#0A0A0C] text-[11px] font-bold px-2.5 py-0 h-6 rounded">
+          <Badge className="bg-[#E8C547] text-[#0A0A0C] text-[10px] font-bold px-2 py-0 h-5 rounded">
             {shot.shotNumber}
           </Badge>
           <Badge
             variant="outline"
-            className="text-[10px] border-[#2A2A30] text-[#8A8A8E] px-2 py-0 h-6 rounded"
+            className="text-[9px] border-[#2A2A30] text-[#8A8A8E] px-1.5 py-0 h-5 rounded"
             title={shotTypeLabel}
           >
             {shot.shotType}
           </Badge>
         </div>
 
-        {/* Hidden file input for upload */}
+        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
@@ -129,45 +133,45 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
           <button
             onClick={handleUploadClick}
             disabled={isUploading}
-            className="p-1.5 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded-md transition-all disabled:opacity-50"
+            className="p-1 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded transition-all disabled:opacity-50"
             title="Upload Image"
           >
-            <Upload className={`w-3.5 h-3.5 ${isUploading ? 'animate-pulse' : ''}`} />
+            <Upload className={`w-3 h-3 ${isUploading ? 'animate-pulse' : ''}`} />
           </button>
           <button
             onClick={() => onEdit(shot)}
-            className="p-1.5 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded-md transition-all"
+            className="p-1 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded transition-all"
             title="Edit"
           >
-            <Edit3 className="w-3.5 h-3.5" />
+            <Edit3 className="w-3 h-3" />
           </button>
           <button
             onClick={() => onRegenerateImage(shot)}
-            className="p-1.5 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded-md transition-all"
+            className="p-1 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded transition-all"
             title="Regenerate Image"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3 h-3" />
           </button>
           <button
             onClick={() => duplicateShot(shot.id)}
-            className="p-1.5 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded-md transition-all"
+            className="p-1 text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F] rounded transition-all"
             title="Duplicate"
           >
-            <Copy className="w-3.5 h-3.5" />
+            <Copy className="w-3 h-3" />
           </button>
           <button
             onClick={() => setShowPrompt((p) => !p)}
-            className={`p-1.5 rounded-md transition-all ${showPrompt ? 'text-[#E8C547] bg-[#E8C547]/10' : 'text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F]'}`}
+            className={`p-1 rounded transition-all ${showPrompt ? 'text-[#E8C547] bg-[#E8C547]/10' : 'text-[#8A8A8E] hover:text-[#E8C547] hover:bg-[#1A1A1F]'}`}
             title="Toggle Prompt"
           >
-            <Code2 className="w-3.5 h-3.5" />
+            <Code2 className="w-3 h-3" />
           </button>
           <button
             onClick={() => removeShot(shot.id)}
-            className="p-1.5 text-[#8A8A8E] hover:text-[#E84747] hover:bg-[#E84747]/10 rounded-md transition-all"
+            className="p-1 text-[#8A8A8E] hover:text-[#E84747] hover:bg-[#E84747]/10 rounded transition-all"
             title="Delete"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3 h-3" />
           </button>
         </div>
       </div>
@@ -188,7 +192,7 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
             alt={`Shot ${shot.shotNumber}`}
             loading="lazy"
             decoding="async"
-            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            className={`w-full h-full object-cover transition-opacity duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => {
               setImageError(true);
@@ -216,34 +220,58 @@ export const ShotCard = memo(function ShotCard({ shot, onEdit, onRegenerateImage
       </div>
 
       {/* Content */}
-      <div className="p-4 space-y-2.5">
-        <p className="text-sm text-[#F0EDE8] leading-relaxed">
+      <div className="p-3.5 space-y-2">
+        {/* Shot type + framing */}
+        <div className="flex items-center gap-2 text-[9px] text-[#555] uppercase tracking-wider">
+          <span>{shotTypeLabel}</span>
+          <span className="text-[#2A2A30]">|</span>
+          <span>Shot {shot.shotNumber}</span>
+        </div>
+
+        {/* Action */}
+        <p className="text-[13px] text-[#F0EDE8] leading-relaxed">
           {shot.actionDescription}
         </p>
+
+        {/* Camera Note */}
         {shot.cameraNote && (
-          <p className="text-xs text-[#B8992E] italic leading-relaxed">
-            🎬 {shot.cameraNote}
+          <p className="text-[11px] text-[#B8992E] italic leading-relaxed flex items-start gap-1.5">
+            <span className="shrink-0 mt-0.5">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </span>
+            {shot.cameraNote}
           </p>
         )}
 
-        {/* Prompt Viewer */}
+        {/* Copy Enhanced Prompt Button */}
+        <button
+          onClick={handleCopyPrompt}
+          className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-md border transition-all w-full justify-center ${
+            copied
+              ? 'bg-green-500/10 border-green-500/30 text-green-400'
+              : 'bg-[#1A1A1F] border-[#2A2A30] text-[#8A8A8E] hover:border-[#E8C547]/50 hover:text-[#E8C547]'
+          }`}
+        >
+          {copied ? (
+            <>
+              <ClipboardCheck className="w-3 h-3" />
+              Copied!
+            </>
+          ) : (
+            <>
+              <Code2 className="w-3 h-3" />
+              Copy Enhanced Prompt
+            </>
+          )}
+        </button>
+
+        {/* Prompt Viewer (expandable) */}
         {showPrompt && (
-          <div className="mt-3 pt-3 border-t border-[#2A2A30] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[#555] uppercase tracking-wider font-medium">Image Prompt</span>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(imagePrompt);
-                  toast.success('Prompt copied');
-                }}
-                className="text-[10px] text-[#8A8A8E] hover:text-[#E8C547] transition-colors flex items-center gap-1"
-              >
-                <ClipboardCopy className="w-3 h-3" />
-                Copy
-              </button>
-            </div>
-            <p className="text-[11px] text-[#8A8A8E] leading-relaxed bg-[#0A0A0C] rounded-lg p-3 break-words select-all">
-              {imagePrompt}
+          <div className="pt-2 border-t border-[#2A2A30]">
+            <p className="text-[10px] text-[#8A8A8E] leading-relaxed bg-[#0A0A0C] rounded-lg p-2.5 break-words select-all max-h-32 overflow-y-auto">
+              {shot.frameDescription || shot.actionDescription}
             </p>
           </div>
         )}
