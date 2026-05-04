@@ -292,48 +292,89 @@ Do NOT use markdown code fences. Return raw JSON only.`;
 // ═══════════════════════════════════════════════════════
 
 function parseAndNormalize(text: string): GenerateResult | null {
-  // Strategy 1: Direct JSON parse
-  let parsed: any = null;
+  // Step 1: Strip Pollinations ad content (anything after the JSON array)
+  // The ad format is: \n\n---\n\n**Support Pollinations.AI:**\n...\n[Some link](url)
+  // We must strip this BEFORE regex matching because [link](url) contains brackets
+  let cleaned = text;
 
+  // Split on "---" separator line (Pollinations always uses this before ads)
+  var separatorIndex = cleaned.indexOf('\n---');
+  if (separatorIndex > -1) {
+    cleaned = cleaned.substring(0, separatorIndex);
+  }
+
+  // Also split on "\n\n---" in case of variant
+  separatorIndex = cleaned.indexOf('\n\n---');
+  if (separatorIndex > -1) {
+    cleaned = cleaned.substring(0, separatorIndex);
+  }
+
+  cleaned = cleaned.trim();
+
+  // Step 2: Strip markdown code fences
+  if (cleaned.indexOf('```') === 0) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
+    var lastFence = cleaned.lastIndexOf('```');
+    if (lastFence > -1) {
+      cleaned = cleaned.substring(0, lastFence);
+    }
+    cleaned = cleaned.trim();
+  }
+
+  // Step 3: Try direct JSON parse
   try {
-    parsed = JSON.parse(text.trim());
-  } catch {
-    // Strategy 2: Extract JSON array from text using regex
-    const match = text.match(/\[[\s\S]*\]/);
-    if (match) {
-      try {
-        parsed = JSON.parse(match[0]);
-      } catch {
-        // Strategy 3: Try to clean and parse
-        try {
-          const cleaned = text
-            .replace(/```json\s*/g, '')
-            .replace(/```\s*/g, '')
-            .replace(/[\u0000-\u001F\u007F]/g, '') // remove control chars
-            .trim();
-          const match2 = cleaned.match(/\[[\s\S]*\]/);
-          if (match2) {
-            parsed = JSON.parse(match2[0]);
-          }
-        } catch {
-          return null;
-        }
+    var parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return buildResult(parsed);
+    }
+  } catch (e) {
+    console.warn('[Storyboard] Direct JSON parse failed:', e.message);
+  }
+
+  // Step 4: Extract JSON array with regex (now safe since ads are stripped)
+  var match = cleaned.match(/\[[\s\S]*\]/);
+  if (match) {
+    try {
+      var parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return buildResult(parsed);
       }
+    } catch (e) {
+      console.warn('[Storyboard] Regex JSON parse failed:', e.message);
     }
   }
 
+  // Step 5: Try removing control characters and re-parsing
+  try {
+    var sanitized = cleaned.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+    match = sanitized.match(/\[[\s\S]*\]/);
+    if (match) {
+      var parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return buildResult(parsed);
+      }
+    }
+  } catch (e) {
+    console.warn('[Storyboard] Sanitized JSON parse failed:', e.message);
+  }
+
+  console.error('[Storyboard] All parse strategies failed. Content length:', text.length, 'cleaned length:', cleaned.length);
+  return null;
+}
+
+function buildResult(parsed: any[]): GenerateResult | null {
   if (!parsed || !Array.isArray(parsed) || parsed.length === 0) return null;
 
-  const firstFrame = String(parsed[0].frame_description || '');
-  const continuityAnchor = extractContinuityAnchor(firstFrame);
-  const baseSeed = Date.now();
+  var firstFrame = String(parsed[0].frame_description || '');
+  var continuityAnchor = extractContinuityAnchor(firstFrame);
+  var baseSeed = Date.now();
 
-  const shots = parsed.map(function(shot: any, index: number) {
-    const prompt = String(shot.frame_description || shot.action_description || '');
-    const fullPrompt = continuityAnchor ? continuityAnchor + '. ' + prompt : prompt;
-    const encodedPrompt = encodeURIComponent(fullPrompt + NEGATIVE_SUFFIX);
-    const seed = baseSeed + index * 100;
-    const imageUrl = 'https://image.pollinations.ai/prompt/' + encodedPrompt + '?width=768&height=432&nologo=true&seed=' + seed + '&model=flux&nofeed=true';
+  var shots = parsed.map(function(shot: any, index: number) {
+    var prompt = String(shot.frame_description || shot.action_description || '');
+    var fullPrompt = continuityAnchor ? continuityAnchor + '. ' + prompt : prompt;
+    var encodedPrompt = encodeURIComponent(fullPrompt + NEGATIVE_SUFFIX);
+    var seed = baseSeed + index * 100;
+    var imageUrl = 'https://image.pollinations.ai/prompt/' + encodedPrompt + '?width=768&height=432&nologo=true&seed=' + seed + '&model=flux&nofeed=true';
 
     return {
       id: crypto.randomUUID(),
