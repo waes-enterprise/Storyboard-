@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 
 export async function GET() {
   try {
-    const storyboards = (db as any).storyboard.findMany({
+    const storyboards = await (db as any).storyboard.findMany({
       orderBy: { updatedAt: 'desc' },
       include: { shots: true },
     });
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Scene description is required' }, { status: 400 });
     }
 
-    const storyboard = (db as any).storyboard.create({
+    const storyboard = await (db as any).storyboard.create({
       data: {
         title: title || 'Untitled Storyboard',
         scene,

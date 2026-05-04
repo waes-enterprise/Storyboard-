@@ -3,7 +3,11 @@
 import { useEffect } from 'react';
 import { useStoryboardStore } from '@/stores/storyboard';
 
-export function KeyboardShortcuts() {
+interface KeyboardShortcutsProps {
+  onNewStoryboard?: () => void;
+}
+
+export function KeyboardShortcuts({ onNewStoryboard }: KeyboardShortcutsProps) {
   const {
     isPresentationMode,
     canUndo,
@@ -54,14 +58,22 @@ export function KeyboardShortcuts() {
       // Ctrl/Cmd + S = Save storyboard
       if (mod && e.key === 's') {
         e.preventDefault();
-        if (shots.length > 0) saveToServer();
+        if (shots.length > 0) {
+          saveToServer().then(() => {
+            // saveToServer shows its own feedback
+          }).catch(() => {});
+        }
         return;
       }
 
-      // Ctrl/Cmd + N = New / Clear
+      // Ctrl/Cmd + N = New / Clear → navigate to landing page
       if (mod && e.key === 'n') {
         e.preventDefault();
-        clearShots();
+        if (onNewStoryboard) {
+          onNewStoryboard();
+        } else {
+          clearShots();
+        }
         return;
       }
 
@@ -108,6 +120,7 @@ export function KeyboardShortcuts() {
     setIsEditModalOpen,
     setEditingShot,
     saveToServer,
+    onNewStoryboard,
   ]);
 
   return null; // No UI — purely handles keyboard events

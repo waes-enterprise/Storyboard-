@@ -56,7 +56,7 @@ export default function Home() {
         <Sidebar onNewStoryboard={handleNewStoryboard} onOpenDashboard={handleOpenDashboard} />
         <ShotCanvas />
       </main>
-      <KeyboardShortcuts />
+      <KeyboardShortcuts onNewStoryboard={handleNewStoryboard} />
     </>
   );
 }

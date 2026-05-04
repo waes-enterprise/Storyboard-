@@ -12,7 +12,7 @@ import { Clapperboard, Sparkles, Loader2, Film, Zap, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   generateStoryboard,
-  isGenerating,
+  isGenerating as isGenerationActive,
   cancelGeneration,
   RateLimitError,
   AbortGenerationError,
@@ -65,7 +65,7 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
     }
 
     // Prevent duplicate requests
-    if (isGenerating()) {
+    if (isGenerationActive()) {
       toast.info('A generation is already in progress');
       return;
     }
