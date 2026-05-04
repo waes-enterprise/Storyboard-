@@ -213,23 +213,22 @@ async function callPollinations(
   }
 
   // Safely extract content from various response formats
-  // Pollinations sometimes puts the actual response in reasoning_content
-  // instead of message.content (especially for openai-fast model)
+  // NOTE: reasoning_content is the chain-of-thought, NOT the answer — never use it
   var choice0 = data && data.choices && Array.isArray(data.choices) && data.choices.length > 0
     ? data.choices[0] : null;
   var message = choice0 ? choice0.message : null;
 
   var textContent = '';
-  if (message && typeof message.content === 'string' && message.content.length > 10) {
+  if (message && typeof message.content === 'string' && message.content.trim().length > 10) {
     textContent = message.content;
-  } else if (choice0 && typeof choice0.text === 'string' && choice0.text.length > 10) {
+  } else if (choice0 && typeof choice0.text === 'string' && choice0.text.trim().length > 10) {
     textContent = choice0.text;
-  } else if (message && typeof message.reasoning_content === 'string' && message.reasoning_content.length > 10) {
-    textContent = message.reasoning_content;
-    console.warn('[Storyboard] Using reasoning_content instead of content');
-  } else if (message && typeof message.reasoning === 'string' && message.reasoning.length > 10) {
-    textContent = message.reasoning;
-    console.warn('[Storyboard] Using reasoning instead of content');
+  }
+
+  // Log reasoning info for debugging (but don't use it as content)
+  if (textContent.length < 10 && message) {
+    var hasReasoning = (message.reasoning_content || '').length > 10;
+    console.warn('[Storyboard] Empty content.', hasReasoning ? 'Has reasoning_content (ignored - it is thinking, not answer)' : 'No reasoning either');
   }
 
   console.log('[Storyboard] AI content length:', textContent.length);
@@ -339,6 +338,19 @@ function parseAndNormalize(text: string): GenerateResult | null {
       return buildResult(parsed);
     }
   } catch (e) {
+    // Step 3b: Try JSON repair — fix truncated responses
+    var repaired = repairTruncatedJSON(cleaned);
+    if (repaired) {
+      try {
+        var parsed = JSON.parse(repaired);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.warn('[Storyboard] Used repaired JSON');
+          return buildResult(parsed);
+        }
+      } catch (e2) {
+        console.warn('[Storyboard] Repaired JSON still invalid');
+      }
+    }
     console.warn('[Storyboard] Direct JSON parse failed:', e.message);
   }
 
@@ -410,6 +422,67 @@ function extractContinuityAnchor(frameDescription: string): string {
 
   var count = Math.min(3, Math.ceil(sentences.length * 0.4));
   return sentences.slice(0, count).join(' ');
+}
+
+/**
+ * Repair truncated JSON array responses.
+ * When max_tokens cuts off the response mid-stream, we get something like:
+ * [{"shot_number":1,...,"frame_description":"some text that was cu
+ * This function finds the last complete object and closes everything properly.
+ */
+function repairTruncatedJSON(text: string): string | null {
+  // Find the start of the JSON array
+  var start = text.indexOf('[');
+  if (start === -1) return null;
+
+  var content = text.substring(start);
+
+  // Find all complete objects (ending with })
+  var lastCompleteObj = -1;
+  var depth = 0;
+  var inString = false;
+  var escaped = false;
+
+  for (var i = 0; i < content.length; i++) {
+    var ch = content[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        lastCompleteObj = i;
+      }
+    }
+  }
+
+  if (lastCompleteObj === -1) return null;
+
+  // Check if there's a comma after the last complete object
+  var after = content.substring(lastCompleteObj + 1).trim();
+  var repaired: string;
+  if (after.length > 0 && after[0] === ',') {
+    // Remove trailing comma and close the array
+    repaired = content.substring(0, lastCompleteObj + 1) + ']';
+  } else {
+    // Just close the array
+    repaired = content.substring(0, lastCompleteObj + 1) + ']';
+  }
+
+  return repaired;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
