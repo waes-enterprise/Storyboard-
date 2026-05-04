@@ -30,9 +30,10 @@ import { ExportDropdown } from './ExportDropdown';
 
 interface SidebarProps {
   onNewStoryboard?: () => void;
+  onOpenDashboard?: () => void;
 }
 
-export function Sidebar({ onNewStoryboard }: SidebarProps) {
+export function Sidebar({ onNewStoryboard, onOpenDashboard }: SidebarProps) {
   const [isLoadingStoryboards, setIsLoadingStoryboards] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedList, setSavedList] = useState<Storyboard[]>([]);
@@ -225,14 +226,25 @@ export function Sidebar({ onNewStoryboard }: SidebarProps) {
               <p className="text-[9px] text-[#555] tracking-[0.15em] uppercase">v2 Director</p>
             </div>
           </div>
-          <button
-            onClick={handleNew}
-            className="flex items-center gap-1 text-[10px] text-[#8A8A8E] hover:text-[#E8C547] transition-colors"
-            title="New Storyboard"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            New
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onOpenDashboard}
+              className="flex items-center gap-1 text-[10px] text-[#8A8A8E] hover:text-[#E8C547] transition-colors"
+              title="Workspaces"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              Workspaces
+            </button>
+            <span className="text-[#2A2A30]">|</span>
+            <button
+              onClick={handleNew}
+              className="flex items-center gap-1 text-[10px] text-[#8A8A8E] hover:text-[#E8C547] transition-colors"
+              title="New Storyboard"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              New
+            </button>
+          </div>
         </div>
       </div>
 
