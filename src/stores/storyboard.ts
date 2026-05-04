@@ -265,16 +265,16 @@ export const useStoryboardStore = create<StoryboardState>((set, get) => ({
   },
 
   reorderShots: (activeId, overId) => {
+    const state = get();
+    const oldIndex = state.shots.findIndex((s) => s.id === activeId);
+    const newIndex = state.shots.findIndex((s) => s.id === overId);
+    if (oldIndex === -1 || newIndex === -1) return;
     get()._pushHistory();
-    set((state) => {
-      const oldIndex = state.shots.findIndex((s) => s.id === activeId);
-      const newIndex = state.shots.findIndex((s) => s.id === overId);
-      if (oldIndex === -1 || newIndex === -1) return;
-      const arr = [...state.shots];
-      const [removed] = arr.splice(oldIndex, 1);
-      arr.splice(newIndex, 0, removed);
-      set({ shots: arr.map((s, i) => ({ ...s, shotNumber: i + 1, order: i })) });
-    });
+    const arr = [...state.shots];
+    const [removed] = arr.splice(oldIndex, 1);
+    arr.splice(newIndex, 0, removed);
+    const reordered = arr.map((s, i) => ({ ...s, shotNumber: i + 1, order: i }));
+    set({ shots: reordered });
     saveToStorageImmediate(get());
   },
 

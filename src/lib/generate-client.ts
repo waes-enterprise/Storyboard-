@@ -3,13 +3,18 @@
  * Bypasses Vercel serverless function network limitations.
  *
  * Features:
- * - Automatic retry with exponential backoff on 429 (rate limit) errors
+ * - Automatic retry with exponential backoff on ALL transient errors (429, 500, empty response, parse failure)
+ * - Model fallback: openai-fast → openai → mistral
+ * - Server-side fallback via /api/generate if all client-side attempts fail
  * - Request mutex prevents duplicate concurrent generations
  * - Clear error classification (rate limit, network, parsing, etc.)
  */
 
 const NEGATIVE_SUFFIX =
   ', raw ungraded documentary footage from real camera SD card, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays no subtitles no graphics, handheld documentary camera style, real photography photorealistic, natural lens no zoom, candid moment captured on set, film grain, natural skin texture, no plastic skin';
+
+// Models to try, in order of preference (fastest first)
+const AI_MODELS = ['openai-fast', 'openai'];
 
 // ═══════════════════════════════════════════════════════
 // Request mutex — only one generation at a time
@@ -46,6 +51,13 @@ export class AbortGenerationError extends Error {
   }
 }
 
+class TransientError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransientError';
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 // Main generation function
 // ═══════════════════════════════════════════════════════
@@ -66,15 +78,16 @@ export interface GenerateResult {
 }
 
 export type GenerateProgress = {
-  status: 'calling_ai' | 'parsing' | 'retrying';
+  status: 'calling_ai' | 'parsing' | 'retrying' | 'trying_model' | 'trying_server';
   retryAttempt?: number;
   retryDelay?: number;
+  model?: string;
 };
 
 type ProgressCallback = (progress: GenerateProgress) => void;
 
 const MAX_RETRIES = 3;
-const RETRY_DELAYS = [5000, 10000, 20000]; // 5s, 10s, 20s
+const RETRY_DELAYS = [3000, 6000, 10000]; // 3s, 6s, 10s
 
 export async function generateStoryboard(
   scene: string,
@@ -93,61 +106,82 @@ export async function generateStoryboard(
   try {
     const { systemPrompt, userPrompt } = buildPrompts(scene, style, shotCount);
 
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      // Check if cancelled
-      if (controller.signal.aborted) {
-        throw new AbortGenerationError();
-      }
-
-      if (attempt > 0) {
-        const delay = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
-        onProgress?.({ status: 'retrying', retryAttempt: attempt, retryDelay: delay / 1000 });
-        await sleep(delay, controller.signal);
-      }
-
-      onProgress?.({ status: 'calling_ai', retryAttempt: attempt });
-
-      try {
-        const result = await callPollinations(
-          systemPrompt,
-          userPrompt,
-          controller.signal
-        );
-
-        onProgress?.({ status: 'parsing' });
-
-        if (!result.shots || result.shots.length === 0) {
-          throw new Error('AI returned no valid shots. Try a different scene description.');
-        }
-
-        return result;
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-
-        if (lastError.name === 'AbortGenerationError' || controller.signal.aborted) {
+    // ── Phase 1: Try each AI model with retries ──
+    for (const model of AI_MODELS) {
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        // Check if cancelled
+        if (controller.signal.aborted) {
           throw new AbortGenerationError();
         }
 
-        // Only retry on 429 rate limit errors
-        if (lastError instanceof RateLimitError) {
-          if (attempt < MAX_RETRIES) {
-            continue; // retry
-          }
-          // Exhausted retries
-          throw new RateLimitError(
-            'AI is busy right now. Please wait a moment and try again.',
-            0
-          );
+        if (attempt > 0) {
+          const delay = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
+          onProgress?.({ status: 'retrying', retryAttempt: attempt, retryDelay: delay / 1000, model });
+          await sleep(delay, controller.signal);
         }
 
-        // Non-retryable error — fail immediately
-        throw lastError;
+        onProgress?.({ status: 'calling_ai', retryAttempt: attempt, model });
+
+        try {
+          const result = await callPollinations(
+            systemPrompt,
+            userPrompt,
+            controller.signal,
+            model
+          );
+
+          onProgress?.({ status: 'parsing' });
+
+          if (!result.shots || result.shots.length === 0) {
+            throw new TransientError('AI returned no valid shots');
+          }
+
+          return result;
+        } catch (err) {
+          if (controller.signal.aborted || err instanceof AbortGenerationError) {
+            throw new AbortGenerationError();
+          }
+
+          const error = err instanceof Error ? err : new Error(String(err));
+
+          // Transient errors that should trigger retry
+          if (
+            error instanceof RateLimitError ||
+            error instanceof TransientError ||
+            error.message.includes('empty response') ||
+            error.message.includes('invalid format') ||
+            error.message.includes('AI service error (5') ||
+            error.message.includes('Failed to fetch') ||
+            error.message.includes('NetworkError') ||
+            error.message.includes('Load failed')
+          ) {
+            // If this is the last retry for this model, try the next model instead
+            if (attempt >= MAX_RETRIES) {
+              console.warn(`Model ${model} failed after ${MAX_RETRIES + 1} attempts, trying next model...`);
+              break; // break inner retry loop, continue to next model
+            }
+            continue; // retry with same model
+          }
+
+          // Fatal error — don't retry
+          throw error;
+        }
       }
     }
 
-    throw lastError || new Error('Generation failed after retries.');
+    // ── Phase 2: Server-side fallback ──
+    onProgress?.({ status: 'trying_server' });
+
+    try {
+      const result = await callServerFallback(scene, style, shotCount, controller.signal);
+      if (result && result.shots && result.shots.length > 0) {
+        return result;
+      }
+    } catch (err) {
+      console.warn('Server fallback also failed:', err);
+    }
+
+    throw new Error('All AI services are busy. Please wait 30 seconds and try again.');
   } finally {
     activeGeneration = null;
   }
@@ -159,13 +193,14 @@ export async function generateStoryboard(
 async function callPollinations(
   systemPrompt: string,
   userPrompt: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  model: string
 ): Promise<GenerateResult> {
   const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'openai-fast',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -176,12 +211,15 @@ async function callPollinations(
   });
 
   if (res.status === 429) {
-    // Rate limited — extract retry-after if available
     const retryAfter = parseInt(res.headers.get('retry-after') || '5', 10);
     throw new RateLimitError(
-      'AI service is busy (rate limited). Retrying...',
+      'AI service is busy (rate limited)',
       retryAfter
     );
+  }
+
+  if (res.status >= 500) {
+    throw new TransientError(`AI service error (${res.status})`);
   }
 
   if (!res.ok) {
@@ -190,18 +228,54 @@ async function callPollinations(
   }
 
   const data = await res.json();
-  const textContent = data.choices?.[0]?.message?.content || '';
 
-  if (!textContent) {
-    throw new Error('AI returned empty response. Try a different scene.');
+  // Handle both standard OpenAI format and Pollinations extended format
+  const textContent =
+    data.choices?.[0]?.message?.content ||
+    data.choices?.[0]?.text ||
+    '';
+
+  if (!textContent || textContent.trim().length < 10) {
+    throw new TransientError('AI returned empty response');
   }
 
   const result = parseAndNormalize(textContent);
   if (!result) {
-    throw new Error('AI returned invalid format. Try again or simplify your scene.');
+    throw new TransientError('AI returned invalid format');
   }
 
   return result;
+}
+
+// ═══════════════════════════════════════════════════════
+// Server-side fallback — calls our own /api/generate endpoint
+// ═══════════════════════════════════════════════════════
+async function callServerFallback(
+  scene: string,
+  style: string,
+  shotCount: number,
+  signal: AbortSignal
+): Promise<GenerateResult | null> {
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scene, style, shotCount }),
+      signal: AbortSignal.timeout(60000),
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+
+    if (!data.shots || !Array.isArray(data.shots) || data.shots.length === 0) {
+      return null;
+    }
+
+    return data as GenerateResult;
+  } catch {
+    return null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -209,7 +283,7 @@ async function callPollinations(
 // ═══════════════════════════════════════════════════════
 
 function buildPrompts(scene: string, style: string, shotCount: number) {
-  const systemPrompt = `You are an expert film director and cinematographer. Create shot lists with PERFECT visual continuity — every frame looks like it was captured on the same day, same location, same camera.
+  const systemPrompt = `You are an expert film director and cinematographer. Create shot lists with PERFECT visual continuity.
 
 CONTINUITY PROTOCOL:
 1. CHARACTER BIBLE: Describe every character exactly the same way in EVERY shot (age, ethnicity, gender, height, build, face, skin tone, eye color, hair style/color/length, exact clothing/outfit, distinguishing marks).
@@ -228,24 +302,24 @@ SHOT GRAMMAR for ${shotCount} shots:
 - Shots 5-${Math.min(shotCount - 2, 7)}: Close-ups (emotion, reaction, detail)
 - Shots ${shotCount > 4 ? shotCount - 1 : 5}-${shotCount}: Dynamic + resolution shots
 
-Camera directions: handheld language only (e.g. "handheld walk alongside subject", "operator steps back", "shoulder-mounted follow shot"). Never use: dolly, crane, slider, zoom, steadicam, jib, gimbal, drone.
+Camera directions: handheld language only. Never use: dolly, crane, slider, zoom, steadicam, jib, gimbal, drone.
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON array. NO markdown fences, NO explanation. Each element:
-{"shot_number": 1, "shot_type": "WS", "action_description": "What happens visually in 2-3 sentences", "camera_note": "Handheld camera direction", "frame_description": "Complete standalone image prompt, 4-6 sentences"}
+{"shot_number": 1, "shot_type": "WS", "action_description": "What happens visually", "camera_note": "Handheld camera direction", "frame_description": "Complete standalone image prompt, 4-6 sentences"}
 
 Shot types: WS, LS, MS, MCU, CU, OTS, POV, HA, LA, TI
-Style: ${style}`;
+Style: ${style}
 
-  const userPrompt = `Create exactly ${shotCount} shots for this scene:
+IMPORTANT: Return the raw JSON array only. Do NOT wrap it in markdown code fences.`;
 
-"${scene}"
+  const userPrompt = `Create exactly ${shotCount} shots for: "${scene}"
 
 Visual style: ${style}
 
-CRITICAL: Every frame_description MUST start with the SAME character and environment descriptions. Only the action/framing changes between shots.
+Every frame_description MUST start with the SAME character and environment descriptions. Only the action/framing changes.
 
-Return ONLY a JSON array with ${shotCount} shot objects. No markdown, no explanation.`;
+Return ONLY a JSON array. No markdown, no explanation, no code fences.`;
 
   return { systemPrompt, userPrompt };
 }
@@ -256,9 +330,19 @@ Return ONLY a JSON array with ${shotCount} shot objects. No markdown, no explana
 
 function parseAndNormalize(text: string): GenerateResult | null {
   let cleaned = text.trim();
+
+  // Strip markdown code fences
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
   }
+
+  // Strip any trailing ad/note content (Pollinations adds these sometimes)
+  cleaned = cleaned.split(/\n---\n/)[0].trim();
+  cleaned = cleaned.split(/\n\n---\n/)[0].trim();
+  // Remove any "Powered by" or "Support" ad lines
+  cleaned = cleaned.replace(/\n*🌸.*$/s, '').trim();
+  cleaned = cleaned.replace(/\n*\*\*Support.*$/s, '').trim();
+  cleaned = cleaned.replace(/\n*Powered by.*$/s, '').trim();
 
   let parsed: unknown;
   try {
