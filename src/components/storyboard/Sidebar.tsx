@@ -27,7 +27,12 @@ import {
 import { toast } from 'sonner';
 import type { Storyboard } from '@/types/storyboard';
 import { ExportDropdown } from './ExportDropdown';
-import { generateStoryboard } from '@/lib/generate-client';
+import {
+  generateStoryboard,
+  isGenerating as checkGenerating,
+  RateLimitError,
+  AbortGenerationError,
+} from '@/lib/generate-client';
 
 interface SidebarProps {
   onNewStoryboard?: () => void;
@@ -90,6 +95,11 @@ export function Sidebar({ onNewStoryboard, onOpenDashboard }: SidebarProps) {
       return;
     }
 
+    if (checkGenerating()) {
+      toast.info('A generation is already in progress');
+      return;
+    }
+
     setIsGenerating(true);
     try {
       const data = await generateStoryboard(scene.trim(), style, shotCount);
@@ -102,7 +112,18 @@ export function Sidebar({ onNewStoryboard, onOpenDashboard }: SidebarProps) {
       }
       toast.success(`Director planned ${data.shots.length} shots!`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Network error. Please try again.');
+      if (err instanceof AbortGenerationError) {
+        toast.info('Generation cancelled');
+      } else if (err instanceof RateLimitError) {
+        toast.error(err.message, {
+          description: 'The AI service is currently busy. Please wait 10-20 seconds and try again.',
+          duration: 6000,
+        });
+      } else if (err instanceof Error) {
+        toast.error(err.message);
+      } else {
+        toast.error('Network error. Please try again.');
+      }
     } finally {
       setIsGenerating(false);
     }

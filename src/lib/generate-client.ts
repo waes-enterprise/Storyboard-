@@ -1,11 +1,54 @@
 /**
  * Client-side storyboard generation — calls Pollinations AI directly from the browser.
- * This bypasses Vercel serverless function network limitations.
+ * Bypasses Vercel serverless function network limitations.
+ *
+ * Features:
+ * - Automatic retry with exponential backoff on 429 (rate limit) errors
+ * - Request mutex prevents duplicate concurrent generations
+ * - Clear error classification (rate limit, network, parsing, etc.)
  */
 
 const NEGATIVE_SUFFIX =
   ', raw ungraded documentary footage from real camera SD card, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays no subtitles no graphics, handheld documentary camera style, real photography photorealistic, natural lens no zoom, candid moment captured on set, film grain, natural skin texture, no plastic skin';
 
+// ═══════════════════════════════════════════════════════
+// Request mutex — only one generation at a time
+// ═══════════════════════════════════════════════════════
+let activeGeneration: AbortController | null = null;
+
+export function isGenerating(): boolean {
+  return activeGeneration !== null;
+}
+
+export function cancelGeneration(): void {
+  if (activeGeneration) {
+    activeGeneration.abort();
+    activeGeneration = null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Error types
+// ═══════════════════════════════════════════════════════
+export class RateLimitError extends Error {
+  public retryAfter: number;
+  constructor(message: string, retryAfterSeconds: number) {
+    super(message);
+    this.name = 'RateLimitError';
+    this.retryAfter = retryAfterSeconds;
+  }
+}
+
+export class AbortGenerationError extends Error {
+  constructor() {
+    super('Generation was cancelled');
+    this.name = 'AbortGenerationError';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Main generation function
+// ═══════════════════════════════════════════════════════
 interface GeneratedShot {
   id: string;
   shotNumber: number;
@@ -17,19 +60,107 @@ interface GeneratedShot {
   order: number;
 }
 
-interface GenerateResult {
+export interface GenerateResult {
   shots: GeneratedShot[];
   continuityAnchor: string;
 }
+
+export type GenerateProgress = {
+  status: 'calling_ai' | 'parsing' | 'retrying';
+  retryAttempt?: number;
+  retryDelay?: number;
+};
+
+type ProgressCallback = (progress: GenerateProgress) => void;
+
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [5000, 10000, 20000]; // 5s, 10s, 20s
 
 export async function generateStoryboard(
   scene: string,
   style: string,
   shotCount: number,
-  signal?: AbortSignal
+  onProgress?: ProgressCallback
 ): Promise<GenerateResult> {
-  const { systemPrompt, userPrompt } = buildPrompts(scene, style, shotCount);
+  // Enforce single request at a time
+  if (activeGeneration) {
+    throw new Error('A generation is already in progress. Please wait for it to finish.');
+  }
 
+  const controller = new AbortController();
+  activeGeneration = controller;
+
+  try {
+    const { systemPrompt, userPrompt } = buildPrompts(scene, style, shotCount);
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      // Check if cancelled
+      if (controller.signal.aborted) {
+        throw new AbortGenerationError();
+      }
+
+      if (attempt > 0) {
+        const delay = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
+        onProgress?.({ status: 'retrying', retryAttempt: attempt, retryDelay: delay / 1000 });
+        await sleep(delay, controller.signal);
+      }
+
+      onProgress?.({ status: 'calling_ai', retryAttempt: attempt });
+
+      try {
+        const result = await callPollinations(
+          systemPrompt,
+          userPrompt,
+          controller.signal
+        );
+
+        onProgress?.({ status: 'parsing' });
+
+        if (!result.shots || result.shots.length === 0) {
+          throw new Error('AI returned no valid shots. Try a different scene description.');
+        }
+
+        return result;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+
+        if (lastError.name === 'AbortGenerationError' || controller.signal.aborted) {
+          throw new AbortGenerationError();
+        }
+
+        // Only retry on 429 rate limit errors
+        if (lastError instanceof RateLimitError) {
+          if (attempt < MAX_RETRIES) {
+            continue; // retry
+          }
+          // Exhausted retries
+          throw new RateLimitError(
+            'AI is busy right now. Please wait a moment and try again.',
+            0
+          );
+        }
+
+        // Non-retryable error — fail immediately
+        throw lastError;
+      }
+    }
+
+    throw lastError || new Error('Generation failed after retries.');
+  } finally {
+    activeGeneration = null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Pollinations API call with error handling
+// ═══════════════════════════════════════════════════════
+async function callPollinations(
+  systemPrompt: string,
+  userPrompt: string,
+  signal: AbortSignal
+): Promise<GenerateResult> {
   const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -41,8 +172,17 @@ export async function generateStoryboard(
       ],
       temperature: 0.7,
     }),
-    signal: signal || AbortSignal.timeout(120000),
+    signal,
   });
+
+  if (res.status === 429) {
+    // Rate limited — extract retry-after if available
+    const retryAfter = parseInt(res.headers.get('retry-after') || '5', 10);
+    throw new RateLimitError(
+      'AI service is busy (rate limited). Retrying...',
+      retryAfter
+    );
+  }
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -171,4 +311,17 @@ function extractContinuityAnchor(frameDescription: string): string {
 
   const anchorSentences = sentences.slice(0, Math.min(3, Math.ceil(sentences.length * 0.4)));
   return anchorSentences.join(' ');
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new AbortGenerationError());
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useStoryboardStore } from '@/stores/storyboard';
 import { VISUAL_STYLES } from '@/types/storyboard';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,14 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Clapperboard, Sparkles, Loader2, Film, Zap, Eye } from 'lucide-react';
 import { toast } from 'sonner';
-import { generateStoryboard } from '@/lib/generate-client';
+import {
+  generateStoryboard,
+  isGenerating,
+  cancelGeneration,
+  RateLimitError,
+  AbortGenerationError,
+  type GenerateProgress,
+} from '@/lib/generate-client';
 
 interface LandingPageProps {
   onGenerated: () => void;
@@ -34,11 +41,32 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
     clearShots,
   } = useStoryboardStore();
 
-  const abortRef = useRef<AbortController | null>(null);
+  const handleProgress = useCallback((p: GenerateProgress) => {
+    if (p.status === 'retrying') {
+      setGenerationStep(`AI is busy — retrying in ${p.retryDelay}s (attempt ${p.retryAttempt}/3)...`);
+      setProgress(30);
+    } else if (p.status === 'calling_ai') {
+      if (p.retryAttempt && p.retryAttempt > 0) {
+        setGenerationStep(`Retrying AI generation (attempt ${p.retryAttempt}/3)...`);
+      } else {
+        setGenerationStep('AI Director is planning your shots...');
+      }
+      setProgress(30);
+    } else if (p.status === 'parsing') {
+      setGenerationStep('Building your storyboard...');
+      setProgress(60);
+    }
+  }, []);
 
   const handleGenerate = useCallback(async () => {
     if (!scene.trim()) {
       toast.error('Describe your scene first');
+      return;
+    }
+
+    // Prevent duplicate requests
+    if (isGenerating()) {
+      toast.info('A generation is already in progress');
       return;
     }
 
@@ -50,32 +78,12 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
       setGenerationStep('AI Director is planning your shots...');
       setProgress(25);
 
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      let data: { shots?: unknown[]; error?: string };
-      try {
-        setGenerationStep('AI Director is planning your shots...');
-        setProgress(30);
-
-        data = await generateStoryboard(scene.trim(), style, shotCount, controller.signal);
-
-        if (!data.shots || !Array.isArray(data.shots) || data.shots.length === 0) {
-          throw new Error('AI returned no valid shots. Try a different scene description.');
-        }
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-        toast.error(err instanceof Error ? err.message : 'Generation failed. Please try again.');
-        setIsGenerating(false);
-        setProgress(0);
-        setGenerationStep('');
-        return;
-      } finally {
-        abortRef.current = null;
-      }
-
-      setGenerationStep('Building your storyboard...');
-      setProgress(60);
+      const data = await generateStoryboard(
+        scene.trim(),
+        style,
+        shotCount,
+        handleProgress
+      );
 
       // Store everything
       storeSetTitle(title || scene.trim().slice(0, 50) + (scene.trim().length > 50 ? '...' : ''));
@@ -99,14 +107,25 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
       // Small delay before transitioning for smooth UX
       await new Promise((r) => setTimeout(r, 300));
       onGenerated();
-    } catch {
-      toast.error('Network error. Please try again.');
+    } catch (err) {
+      if (err instanceof AbortGenerationError) {
+        toast.info('Generation cancelled');
+      } else if (err instanceof RateLimitError) {
+        toast.error(err.message, {
+          description: 'The AI service is currently busy. Please wait 10-20 seconds and try again.',
+          duration: 6000,
+        });
+      } else if (err instanceof Error) {
+        toast.error(err.message);
+      } else {
+        toast.error('Network error. Please try again.');
+      }
     } finally {
       setIsGenerating(false);
       setProgress(0);
       setGenerationStep('');
     }
-  }, [scene, style, shotCount, title, setShots, storeSetTitle, storeSetScene, storeSetStyle, storeSetShotCount, clearShots, onGenerated]);
+  }, [scene, style, shotCount, title, setShots, storeSetTitle, storeSetScene, storeSetStyle, storeSetShotCount, clearShots, onGenerated, handleProgress]);
 
   return (
     <div className="min-h-screen bg-[#0A0A0C] flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden">
@@ -225,9 +244,13 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
 
           {/* Generate Button */}
           <Button
-            onClick={handleGenerate}
-            disabled={isGenerating || !scene.trim()}
-            className="w-full bg-[#E8C547] hover:bg-[#D4B23E] text-[#0A0A0C] font-bold h-12 text-sm tracking-wide transition-all gold-glow disabled:opacity-50 disabled:hover:bg-[#E8C547]"
+            onClick={isGenerating ? () => cancelGeneration() : handleGenerate}
+            disabled={!scene.trim()}
+            className={`w-full font-bold h-12 text-sm tracking-wide transition-all disabled:opacity-50 ${
+              isGenerating
+                ? 'bg-[#E84747] hover:bg-[#D43D3D] text-white'
+                : 'bg-[#E8C547] hover:bg-[#D4B23E] text-[#0A0A0C] gold-glow'
+            }`}
           >
             {isGenerating ? (
               <>
@@ -247,18 +270,26 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
             <div className="space-y-2">
               <div className="w-full h-1 bg-[#2A2A30] rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#E8C547] transition-all duration-500 ease-out rounded-full"
+                  className={`h-full rounded-full transition-all duration-500 ease-out ${
+                    generationStep.includes('retry') || generationStep.includes('busy')
+                      ? 'bg-[#E84747]'
+                      : 'bg-[#E8C547]'
+                  }`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <p className="text-[10px] text-[#555] text-center">
-                {progress < 30
+              <p className={`text-[10px] text-center ${
+                generationStep.includes('retry') || generationStep.includes('busy')
+                  ? 'text-[#E84747]'
+                  : 'text-[#555]'
+              }`}>
+                {generationStep || (progress < 30
                   ? 'AI Director is analyzing your scene...'
                   : progress < 70
                     ? 'Planning shot composition and camera movement...'
                     : progress < 100
                       ? 'Building storyboard with continuity lock...'
-                      : 'Done! Loading your storyboard...'}
+                      : 'Done! Loading your storyboard...')}
               </p>
             </div>
           )}
