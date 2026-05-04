@@ -213,7 +213,6 @@ async function callPollinations(
   }
 
   // Safely extract content from various response formats
-  // NOTE: reasoning_content is the chain-of-thought, NOT the answer — never use it
   var choice0 = data && data.choices && Array.isArray(data.choices) && data.choices.length > 0
     ? data.choices[0] : null;
   var message = choice0 ? choice0.message : null;
@@ -225,12 +224,6 @@ async function callPollinations(
     textContent = choice0.text;
   }
 
-  // Log reasoning info for debugging (but don't use it as content)
-  if (textContent.length < 10 && message) {
-    var hasReasoning = (message.reasoning_content || '').length > 10;
-    console.warn('[Storyboard] Empty content.', hasReasoning ? 'Has reasoning_content (ignored - it is thinking, not answer)' : 'No reasoning either');
-  }
-
   console.log('[Storyboard] AI content length:', textContent.length);
   console.log('[Storyboard] AI content preview:', textContent.slice(0, 200));
 
@@ -238,9 +231,28 @@ async function callPollinations(
     throw new Error('empty_response');
   }
 
-  const result = parseAndNormalize(textContent);
+  var result = parseAndNormalize(textContent);
   if (!result) {
-    throw new Error('parse_failed');
+    // LAST RESORT: Try extracting JSON from reasoning_content
+    // Some models put the JSON answer at the end of their thinking
+    var reasoning = '';
+    if (message && typeof message.reasoning_content === 'string') {
+      reasoning = message.reasoning_content;
+    } else if (message && typeof message.reasoning === 'string') {
+      reasoning = message.reasoning;
+    }
+
+    if (reasoning.length > 100) {
+      console.warn('[Storyboard] Trying to extract JSON from reasoning_content...');
+      result = parseAndNormalize(reasoning);
+      if (result) {
+        console.warn('[Storyboard] Successfully extracted JSON from reasoning!');
+      }
+    }
+
+    if (!result) {
+      throw new Error('parse_failed');
+    }
   }
 
   return result;
