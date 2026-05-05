@@ -43,20 +43,16 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
 
   const handleProgress = useCallback((p: GenerateProgress) => {
     if (p.status === 'retrying') {
-      setGenerationStep(`AI is busy — retrying in ${p.retryDelay}s (${p.model || 'AI'})...`);
-      setProgress(30);
+      setGenerationStep(p.message || 'Retrying...');
+      setProgress(40);
     } else if (p.status === 'calling_ai') {
-      if (p.retryAttempt && p.retryAttempt > 0) {
-        setGenerationStep(`Retrying with ${p.model || 'AI'} (attempt ${p.retryAttempt}/3)...`);
-      } else {
-        setGenerationStep(`AI Director is planning your shots (${p.model || 'AI'})...`);
-      }
+      setGenerationStep(p.message || 'AI Director is working...');
       setProgress(30);
     } else if (p.status === 'trying_server') {
-      setGenerationStep('Trying server fallback...');
+      setGenerationStep(p.message || 'Trying backup server...');
       setProgress(70);
     } else if (p.status === 'parsing') {
-      setGenerationStep('Building your storyboard...');
+      setGenerationStep(p.message || 'Building your storyboard...');
       setProgress(60);
     }
   }, []);

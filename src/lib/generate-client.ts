@@ -1,18 +1,16 @@
 /**
  * Client-side storyboard generation — calls Pollinations AI directly from the browser.
- * Bypasses Vercel serverless function network limitations.
  *
- * Resilience strategy:
- * 1. Try openai-fast model with retries on any transient error
- * 2. Fall back to openai model with retries
- * 3. Fall back to server-side /api/generate
- * 4. Ultra-robust JSON parsing that handles markdown, ads, and malformed responses
+ * Key improvements over previous version:
+ * - All fetch calls have a 15-second timeout (AbortSignal.timeout)
+ * - Fast path: try openai-fast first with 1 retry only
+ * - Fallback: try openai with 15s timeout, no retries (it's slow)
+ * - Server fallback via /api/generate as last resort
+ * - Ultra-robust JSON parsing that handles markdown, ads, and malformed responses
  */
 
 const NEGATIVE_SUFFIX =
   ', raw ungraded documentary footage from real camera SD card, natural sunlight only, no color grading no filters no CGI no VFX no animation no AI enhancement, no text no watermarks no overlays no subtitles no graphics, handheld documentary camera style, real photography photorealistic, natural lens no zoom, candid moment captured on set, film grain, natural skin texture, no plastic skin';
-
-const AI_MODELS = ['openai-fast', 'openai'];
 
 // ═══════════════════════════════════════════════════════
 // Request mutex — only one generation at a time
@@ -69,16 +67,13 @@ export interface GenerateResult {
 }
 
 export type GenerateProgress = {
-  status: 'calling_ai' | 'parsing' | 'retrying' | 'trying_model' | 'trying_server';
-  retryAttempt?: number;
-  retryDelay?: number;
-  model?: string;
+  status: 'calling_ai' | 'parsing' | 'retrying' | 'trying_server';
+  message?: string;
 };
 
 type ProgressCallback = (progress: GenerateProgress) => void;
 
-const MAX_RETRIES = 2;
-const RETRY_DELAYS = [3000, 8000];
+const FETCH_TIMEOUT_MS = 15_000; // 15 second timeout for all API calls
 
 export async function generateStoryboard(
   scene: string,
@@ -97,19 +92,24 @@ export async function generateStoryboard(
   try {
     const { systemPrompt, userPrompt } = buildPrompts(scene, style, shotCount);
 
-    for (const model of AI_MODELS) {
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Strategy: try openai-fast (fast, usually works) → retry once → openai (slower, reliable)
+    const models = [
+      { name: 'openai-fast', retries: 1 },
+      { name: 'openai', retries: 0 },
+    ];
+
+    for (const { name: model, retries } of models) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
         if (controller.signal.aborted) {
           throw new AbortGenerationError();
         }
 
         if (attempt > 0) {
-          const delay = RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)];
-          onProgress?.({ status: 'retrying', retryAttempt: attempt, retryDelay: delay / 1000, model });
-          await sleep(delay, controller.signal);
+          onProgress?.({ status: 'retrying', message: `Retrying with ${model}...` });
+          await sleep(2000, controller.signal);
         }
 
-        onProgress?.({ status: 'calling_ai', retryAttempt: attempt, model });
+        onProgress?.({ status: 'calling_ai', message: `AI Director is working (${model})...` });
 
         try {
           const result = await callPollinations(
@@ -119,7 +119,7 @@ export async function generateStoryboard(
             model
           );
 
-          onProgress?.({ status: 'parsing' });
+          onProgress?.({ status: 'parsing', message: 'Building your storyboard...' });
 
           if (!result || !result.shots || result.shots.length === 0) {
             throw new Error('Parse returned empty shots');
@@ -135,7 +135,8 @@ export async function generateStoryboard(
           console.warn(`[Storyboard] ${model} attempt ${attempt + 1} failed:`, msg);
           errors.push(`${model}:${msg}`);
 
-          if (attempt >= MAX_RETRIES) {
+          // Don't retry on 429 rate limit - move to next model
+          if (msg.includes('rate_limited') || msg.includes('429')) {
             break;
           }
         }
@@ -143,7 +144,7 @@ export async function generateStoryboard(
     }
 
     // Server fallback
-    onProgress?.({ status: 'trying_server' });
+    onProgress?.({ status: 'trying_server', message: 'Trying backup server...' });
     console.warn('[Storyboard] All client models failed, trying server fallback');
 
     try {
@@ -156,132 +157,158 @@ export async function generateStoryboard(
     }
 
     const errorDetail = errors.length > 0 ? errors[errors.length - 1] : 'unknown';
-    throw new Error(`AI generation failed (${errorDetail}). Please try again.`);
+    throw new Error(`Generation failed. Please try again.`);
   } finally {
     activeGeneration = null;
   }
 }
 
 // ═══════════════════════════════════════════════════════
-// Pollinations API call
+// Pollinations API call with timeout
 // ═══════════════════════════════════════════════════════
 async function callPollinations(
   systemPrompt: string,
   userPrompt: string,
-  signal: AbortSignal,
+  userSignal: AbortSignal,
   model: string
 ): Promise<GenerateResult> {
-  const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 8000,
-    }),
-    signal,
-  });
+  // Create a combined signal: user abort OR timeout
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
 
-  if (res.status === 429) {
-    throw new Error('rate_limited');
-  }
+  // If user aborts, also clear timeout
+  const onUserAbort = () => {
+    clearTimeout(timeoutId);
+  };
+  userSignal.addEventListener('abort', onUserAbort, { once: true });
 
-  if (!res.ok) {
-    throw new Error(`http_${res.status}`);
-  }
-
-  // Use text() first for maximum compatibility, then manually parse
-  let responseText: string;
   try {
-    responseText = await res.text();
-  } catch {
-    throw new Error('failed_to_read_response');
-  }
+    const combinedSignal = userSignal.aborted
+      ? userSignal
+      : anySignal(userSignal, timeoutController.signal);
 
-  console.log('[Storyboard] Raw response length:', responseText.length);
+    const res = await fetch('https://text.pollinations.ai/openai/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+      }),
+      signal: combinedSignal,
+    });
 
-  let data: any;
-  try {
-    data = JSON.parse(responseText);
-  } catch (e) {
-    console.error('[Storyboard] JSON parse error:', e, 'raw:', responseText.slice(0, 500));
-    throw new Error('invalid_json_response');
-  }
-
-  // Safely extract content from various response formats
-  var choice0 = data && data.choices && Array.isArray(data.choices) && data.choices.length > 0
-    ? data.choices[0] : null;
-  var message = choice0 ? choice0.message : null;
-
-  var textContent = '';
-  if (message && typeof message.content === 'string' && message.content.trim().length > 10) {
-    textContent = message.content;
-  } else if (choice0 && typeof choice0.text === 'string' && choice0.text.trim().length > 10) {
-    textContent = choice0.text;
-  }
-
-  console.log('[Storyboard] AI content length:', textContent.length);
-  console.log('[Storyboard] AI content preview:', textContent.slice(0, 200));
-
-  if (!textContent || textContent.trim().length < 10) {
-    throw new Error('empty_response');
-  }
-
-  var result = parseAndNormalize(textContent);
-  if (!result) {
-    // LAST RESORT: Try extracting JSON from reasoning_content
-    // Some models put the JSON answer at the end of their thinking
-    var reasoning = '';
-    if (message && typeof message.reasoning_content === 'string') {
-      reasoning = message.reasoning_content;
-    } else if (message && typeof message.reasoning === 'string') {
-      reasoning = message.reasoning;
+    if (res.status === 429) {
+      throw new Error('rate_limited');
     }
 
-    if (reasoning.length > 100) {
-      console.warn('[Storyboard] Trying to extract JSON from reasoning_content...');
-      result = parseAndNormalize(reasoning);
-      if (result) {
-        console.warn('[Storyboard] Successfully extracted JSON from reasoning!');
+    if (!res.ok) {
+      throw new Error(`http_${res.status}`);
+    }
+
+    let responseText: string;
+    try {
+      responseText = await res.text();
+    } catch {
+      throw new Error('failed_to_read_response');
+    }
+
+    console.log('[Storyboard] Raw response length:', responseText.length);
+
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      console.error('[Storyboard] JSON parse error, raw:', responseText.slice(0, 300));
+      throw new Error('invalid_json_response');
+    }
+
+    // Extract text content from response
+    const choice0 = data?.choices?.[0];
+    const message = choice0?.message;
+
+    let textContent = '';
+    if (typeof message?.content === 'string' && message.content.trim().length > 10) {
+      textContent = message.content;
+    } else if (typeof choice0?.text === 'string' && choice0.text.trim().length > 10) {
+      textContent = choice0.text;
+    }
+
+    if (textContent.trim().length < 10) {
+      throw new Error('empty_response');
+    }
+
+    // Parse the JSON from the text
+    let result = parseAndNormalize(textContent);
+    if (!result) {
+      // Try reasoning_content as last resort
+      const reasoning = message?.reasoning_content || message?.reasoning || '';
+      if (typeof reasoning === 'string' && reasoning.length > 100) {
+        result = parseAndNormalize(reasoning);
+      }
+      if (!result) {
+        throw new Error('parse_failed');
       }
     }
 
-    if (!result) {
-      throw new Error('parse_failed');
-    }
+    return result;
+  } finally {
+    clearTimeout(timeoutId);
+    userSignal.removeEventListener('abort', onUserAbort);
   }
+}
 
-  return result;
+/**
+ * Combine multiple AbortSignals into one - aborts if ANY signal aborts.
+ */
+function anySignal(...signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      return controller.signal;
+    }
+    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
 }
 
 // ═══════════════════════════════════════════════════════
-// Server-side fallback
+// Server-side fallback with timeout
 // ═══════════════════════════════════════════════════════
 async function callServerFallback(
   scene: string,
   style: string,
   shotCount: number,
-  signal: AbortSignal
+  userSignal: AbortSignal
 ): Promise<GenerateResult | null> {
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+  const onUserAbort = () => clearTimeout(timeoutId);
+  userSignal.addEventListener('abort', onUserAbort, { once: true });
+
   try {
+    const combinedSignal = anySignal(userSignal, timeoutController.signal);
     const res = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scene, style, shotCount }),
-      signal,
+      signal: combinedSignal,
     });
 
     if (!res.ok) return null;
-
     const data = await res.json();
     if (!data.shots || !Array.isArray(data.shots) || data.shots.length === 0) return null;
     return data as GenerateResult;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
+    userSignal.removeEventListener('abort', onUserAbort);
   }
 }
 
@@ -314,102 +341,73 @@ Do NOT use markdown code fences. Return raw JSON only.`;
 // ═══════════════════════════════════════════════════════
 
 function parseAndNormalize(text: string): GenerateResult | null {
-  // Step 1: Strip Pollinations ad content (anything after the JSON array)
-  // The ad format is: \n\n---\n\n**Support Pollinations.AI:**\n...\n[Some link](url)
-  // We must strip this BEFORE regex matching because [link](url) contains brackets
   let cleaned = text;
 
-  // Split on "---" separator line (Pollinations always uses this before ads)
-  var separatorIndex = cleaned.indexOf('\n---');
-  if (separatorIndex > -1) {
-    cleaned = cleaned.substring(0, separatorIndex);
-  }
-
-  // Also split on "\n\n---" in case of variant
-  separatorIndex = cleaned.indexOf('\n\n---');
-  if (separatorIndex > -1) {
-    cleaned = cleaned.substring(0, separatorIndex);
-  }
+  // Strip Pollinations ad content (after "---" separator)
+  const sepIdx1 = cleaned.indexOf('\n---');
+  if (sepIdx1 > -1) cleaned = cleaned.substring(0, sepIdx1);
+  const sepIdx2 = cleaned.indexOf('\n\n---');
+  if (sepIdx2 > -1) cleaned = cleaned.substring(0, sepIdx2);
 
   cleaned = cleaned.trim();
 
-  // Step 2: Strip markdown code fences
+  // Strip markdown code fences
   if (cleaned.indexOf('```') === 0) {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
-    var lastFence = cleaned.lastIndexOf('```');
-    if (lastFence > -1) {
-      cleaned = cleaned.substring(0, lastFence);
-    }
+    const lastFence = cleaned.lastIndexOf('```');
+    if (lastFence > -1) cleaned = cleaned.substring(0, lastFence);
     cleaned = cleaned.trim();
   }
 
-  // Step 3: Try direct JSON parse
+  // Try direct JSON parse
   try {
-    var parsed = JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return buildResult(parsed);
     }
-  } catch (e) {
-    // Step 3b: Try JSON repair — fix truncated responses
-    var repaired = repairTruncatedJSON(cleaned);
+  } catch {
+    // Try JSON repair for truncated responses
+    const repaired = repairTruncatedJSON(cleaned);
     if (repaired) {
       try {
-        var parsed = JSON.parse(repaired);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          console.warn('[Storyboard] Used repaired JSON');
-          return buildResult(parsed);
-        }
-      } catch (e2) {
-        console.warn('[Storyboard] Repaired JSON still invalid');
-      }
+        const parsed = JSON.parse(repaired);
+        if (Array.isArray(parsed) && parsed.length > 0) return buildResult(parsed);
+      } catch { /* fall through */ }
     }
-    console.warn('[Storyboard] Direct JSON parse failed:', e.message);
   }
 
-  // Step 4: Extract JSON array with regex (now safe since ads are stripped)
-  var match = cleaned.match(/\[[\s\S]*\]/);
+  // Extract JSON array with regex
+  const match = cleaned.match(/\[[\s\S]*\]/);
   if (match) {
     try {
-      var parsed = JSON.parse(match[0]);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return buildResult(parsed);
-      }
-    } catch (e) {
-      console.warn('[Storyboard] Regex JSON parse failed:', e.message);
+      const parsed = JSON.parse(match[0]);
+      if (Array.isArray(parsed) && parsed.length > 0) return buildResult(parsed);
+    } catch {
+      // Try sanitized version
+      try {
+        const sanitized = match[0].replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+        const parsed = JSON.parse(sanitized);
+        if (Array.isArray(parsed) && parsed.length > 0) return buildResult(parsed);
+      } catch { /* all parse strategies failed */ }
     }
   }
 
-  // Step 5: Try removing control characters and re-parsing
-  try {
-    var sanitized = cleaned.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-    match = sanitized.match(/\[[\s\S]*\]/);
-    if (match) {
-      var parsed = JSON.parse(match[0]);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return buildResult(parsed);
-      }
-    }
-  } catch (e) {
-    console.warn('[Storyboard] Sanitized JSON parse failed:', e.message);
-  }
-
-  console.error('[Storyboard] All parse strategies failed. Content length:', text.length, 'cleaned length:', cleaned.length);
   return null;
 }
 
 function buildResult(parsed: any[]): GenerateResult | null {
   if (!parsed || !Array.isArray(parsed) || parsed.length === 0) return null;
 
-  var firstFrame = String(parsed[0].frame_description || '');
-  var continuityAnchor = extractContinuityAnchor(firstFrame);
-  var baseSeed = Date.now();
+  const firstFrame = String(parsed[0].frame_description || '');
+  const continuityAnchor = extractContinuityAnchor(firstFrame);
+  const baseSeed = Date.now();
 
-  var shots = parsed.map(function(shot: any, index: number) {
-    var prompt = String(shot.frame_description || shot.action_description || '');
-    var fullPrompt = continuityAnchor ? continuityAnchor + '. ' + prompt : prompt;
-    var encodedPrompt = encodeURIComponent(fullPrompt + NEGATIVE_SUFFIX);
-    var seed = baseSeed + index * 100;
-    var imageUrl = 'https://image.pollinations.ai/prompt/' + encodedPrompt + '?width=768&height=432&nologo=true&seed=' + seed + '&model=flux&nofeed=true';
+  const shots = parsed.map((shot: any, index: number) => {
+    const prompt = String(shot.frame_description || shot.action_description || '');
+    const fullPrompt = continuityAnchor ? continuityAnchor + '. ' + prompt : prompt;
+    const encodedPrompt = encodeURIComponent(fullPrompt + NEGATIVE_SUFFIX);
+    const seed = baseSeed + index * 100;
+    const imageUrl = 'https://image.pollinations.ai/prompt/' + encodedPrompt + '?width=768&height=432&nologo=true&seed=' + seed + '&model=flux&nofeed=true';
 
     return {
       id: crypto.randomUUID(),
@@ -423,89 +421,49 @@ function buildResult(parsed: any[]): GenerateResult | null {
     };
   });
 
-  return { shots: shots, continuityAnchor: continuityAnchor };
+  return { shots, continuityAnchor };
 }
 
 function extractContinuityAnchor(frameDescription: string): string {
   if (!frameDescription) return '';
-
-  var sentences = frameDescription.split(/(?<=[.!?])\s+/);
+  const sentences = frameDescription.split(/(?<=[.!?])\s+/);
   if (sentences.length <= 2) return frameDescription;
-
-  var count = Math.min(3, Math.ceil(sentences.length * 0.4));
+  const count = Math.min(3, Math.ceil(sentences.length * 0.4));
   return sentences.slice(0, count).join(' ');
 }
 
-/**
- * Repair truncated JSON array responses.
- * When max_tokens cuts off the response mid-stream, we get something like:
- * [{"shot_number":1,...,"frame_description":"some text that was cu
- * This function finds the last complete object and closes everything properly.
- */
 function repairTruncatedJSON(text: string): string | null {
-  // Find the start of the JSON array
-  var start = text.indexOf('[');
+  const start = text.indexOf('[');
   if (start === -1) return null;
 
-  var content = text.substring(start);
+  const content = text.substring(start);
+  let lastCompleteObj = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
 
-  // Find all complete objects (ending with })
-  var lastCompleteObj = -1;
-  var depth = 0;
-  var inString = false;
-  var escaped = false;
-
-  for (var i = 0; i < content.length; i++) {
-    var ch = content[i];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      escaped = true;
-      continue;
-    }
-    if (ch === '"') {
-      inString = !inString;
-      continue;
-    }
+  for (let i = 0; i < content.length; i++) {
+    const ch = content[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\') { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
     if (inString) continue;
-
     if (ch === '{') depth++;
-    if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        lastCompleteObj = i;
-      }
-    }
+    if (ch === '}') { depth--; if (depth === 0) lastCompleteObj = i; }
   }
 
   if (lastCompleteObj === -1) return null;
-
-  // Check if there's a comma after the last complete object
-  var after = content.substring(lastCompleteObj + 1).trim();
-  var repaired: string;
-  if (after.length > 0 && after[0] === ',') {
-    // Remove trailing comma and close the array
-    repaired = content.substring(0, lastCompleteObj + 1) + ']';
-  } else {
-    // Just close the array
-    repaired = content.substring(0, lastCompleteObj + 1) + ']';
-  }
-
-  return repaired;
+  return content.substring(0, lastCompleteObj + 1) + ']';
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise(function(resolve, reject) {
-    var timer = setTimeout(resolve, ms);
+    const timer = setTimeout(resolve, ms);
     if (signal) {
-      var onAbort = function() {
+      signal.addEventListener('abort', function() {
         clearTimeout(timer);
         reject(new AbortGenerationError());
-      };
-      signal.addEventListener('abort', onAbort, { once: true });
+      }, { once: true });
     }
   });
 }
