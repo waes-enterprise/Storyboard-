@@ -84,22 +84,16 @@ export function LandingPage({ onGenerated }: LandingPageProps) {
         handleProgress
       );
 
-      // Store everything
+      setGenerationStep('Complete!');
+      setProgress(100);
+
+      // Clear old state first, then set new data
+      // (clearShots resets title/scene/style, so we must set metadata AFTER it)
+      clearShots();
       storeSetTitle(title || scene.trim().slice(0, 50) + (scene.trim().length > 50 ? '...' : ''));
       storeSetScene(scene.trim());
       storeSetStyle(style);
       storeSetShotCount(shotCount);
-
-      // Brief delay for UX
-      await new Promise((r) => setTimeout(r, 300));
-
-      setGenerationStep('Complete!');
-      setProgress(100);
-
-      await new Promise((r) => setTimeout(r, 200));
-
-      // Set shots and transition
-      clearShots();
       setShots(data.shots);
       toast.success(`Director planned ${data.shots.length} shots!`);
 

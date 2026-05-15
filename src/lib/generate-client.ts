@@ -73,7 +73,8 @@ export type GenerateProgress = {
 
 type ProgressCallback = (progress: GenerateProgress) => void;
 
-const FETCH_TIMEOUT_MS = 15_000; // 15 second timeout for all API calls
+const FETCH_TIMEOUT_MS = 20_000; // 20 second timeout for all API calls
+const FAST_FETCH_TIMEOUT_MS = 15_000; // 15s for the fast model
 
 export async function generateStoryboard(
   scene: string,
@@ -94,11 +95,11 @@ export async function generateStoryboard(
 
     // Strategy: try openai-fast (fast, usually works) → retry once → openai (slower, reliable)
     const models = [
-      { name: 'openai-fast', retries: 1 },
-      { name: 'openai', retries: 0 },
+      { name: 'openai-fast', retries: 1, timeout: FAST_FETCH_TIMEOUT_MS },
+      { name: 'openai', retries: 0, timeout: FETCH_TIMEOUT_MS },
     ];
 
-    for (const { name: model, retries } of models) {
+    for (const { name: model, retries, timeout } of models) {
       for (let attempt = 0; attempt <= retries; attempt++) {
         if (controller.signal.aborted) {
           throw new AbortGenerationError();
@@ -116,7 +117,8 @@ export async function generateStoryboard(
             systemPrompt,
             userPrompt,
             controller.signal,
-            model
+            model,
+            timeout
           );
 
           onProgress?.({ status: 'parsing', message: 'Building your storyboard...' });
@@ -157,7 +159,8 @@ export async function generateStoryboard(
     }
 
     const errorDetail = errors.length > 0 ? errors[errors.length - 1] : 'unknown';
-    throw new Error(`Generation failed. Please try again.`);
+    console.error('[Storyboard] All generation strategies failed:', errors);
+    throw new Error(`Generation failed after all retries. Please try again in a moment.`);
   } finally {
     activeGeneration = null;
   }
@@ -170,11 +173,12 @@ async function callPollinations(
   systemPrompt: string,
   userPrompt: string,
   userSignal: AbortSignal,
-  model: string
+  model: string,
+  timeoutMs: number
 ): Promise<GenerateResult> {
   // Create a combined signal: user abort OR timeout
   const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
 
   // If user aborts, also clear timeout
   const onUserAbort = () => {

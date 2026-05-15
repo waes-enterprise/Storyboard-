@@ -20,11 +20,16 @@ export default function Home() {
   }, [hydrate]);
 
   // Auto-detect: if shots already exist (from storage), go straight to storyboard
+  // Only runs once on mount — avoids race condition with generate flow
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    if (shots.length > 0 && phase === 'landing') {
+    if (!hydrated && shots.length > 0) {
+      setHydrated(true);
       setPhase('storyboard');
+    } else if (!hydrated) {
+      setHydrated(true);
     }
-  }, [shots.length, phase]);
+  }, [shots.length, hydrated, phase]);
 
   const handleGenerated = useCallback(() => {
     setPhase('storyboard');
